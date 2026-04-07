@@ -4,6 +4,10 @@ import com.vibe2guys.backend.common.response.ApiResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
 import com.vibe2guys.backend.learning.dto.ContentProgressRequest;
 import com.vibe2guys.backend.learning.dto.ContentProgressResponse;
+import com.vibe2guys.backend.learning.dto.AttendanceEndRequest;
+import com.vibe2guys.backend.learning.dto.AttendanceResponse;
+import com.vibe2guys.backend.learning.dto.AttendanceStartRequest;
+import com.vibe2guys.backend.learning.service.AttendanceService;
 import com.vibe2guys.backend.learning.service.ContentProgressService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ContentProgressController {
 
     private final ContentProgressService contentProgressService;
+    private final AttendanceService attendanceService;
 
     @PostMapping("/{contentId}/progress")
     public ApiResponse<ContentProgressResponse> saveProgress(
@@ -37,5 +42,23 @@ public class ContentProgressController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("진도 조회 성공", contentProgressService.getProgress(contentId, principal.getId()));
+    }
+
+    @PostMapping("/{contentId}/attendance")
+    public ApiResponse<AttendanceResponse> startAttendance(
+            @PathVariable Long contentId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody AttendanceStartRequest request
+    ) {
+        return ApiResponse.success("출석 기록 완료", attendanceService.startAttendance(contentId, principal.getId(), request));
+    }
+
+    @org.springframework.web.bind.annotation.PatchMapping("/{contentId}/attendance")
+    public ApiResponse<AttendanceResponse> finishAttendance(
+            @PathVariable Long contentId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody AttendanceEndRequest request
+    ) {
+        return ApiResponse.success("퇴장 기록 완료", attendanceService.finishAttendance(contentId, principal.getId(), request));
     }
 }
