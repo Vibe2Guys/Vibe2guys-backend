@@ -6,8 +6,10 @@ import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
 import com.vibe2guys.backend.team.dto.ChatRoomResponse;
 import com.vibe2guys.backend.team.dto.CreateTeamChatMessageRequest;
+import com.vibe2guys.backend.team.dto.TeamAnalyticsResponse;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
 import com.vibe2guys.backend.team.dto.TeamChatMessageResponse;
+import com.vibe2guys.backend.team.dto.TeamMemberContributionResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
 import com.vibe2guys.backend.team.service.TeamService;
@@ -95,5 +97,21 @@ public class TeamController {
             @Valid @RequestBody CreateTeamChatMessageRequest request
     ) {
         return ApiResponse.success("팀 채팅 메시지 저장 완료", teamService.createMessage(chatRoomId, principal.getId(), request));
+    }
+
+    @GetMapping("/teams/{teamId}/analytics")
+    public ApiResponse<TeamAnalyticsResponse> getTeamAnalytics(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("팀 협업 지표 조회 성공", teamService.getTeamAnalytics(teamId, principal.getId()));
+    }
+
+    @GetMapping("/teams/{teamId}/members/contributions")
+    public ApiResponse<List<TeamMemberContributionResponse>> getMemberContributions(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("팀원 기여도 조회 성공", teamService.getMemberContributions(teamId, principal.getId()));
     }
 }

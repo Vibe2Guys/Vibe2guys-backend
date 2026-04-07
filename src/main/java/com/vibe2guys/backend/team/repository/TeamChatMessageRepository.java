@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface TeamChatMessageRepository extends JpaRepository<TeamChatMessage, Long> {
     List<TeamChatMessage> findByChatRoomIdOrderBySentAtAsc(Long chatRoomId);
+
+    List<TeamChatMessage> findByTeamIdOrderBySentAtAsc(Long teamId);
 }
