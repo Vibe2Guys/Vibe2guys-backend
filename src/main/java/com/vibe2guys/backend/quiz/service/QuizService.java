@@ -1,0 +1,187 @@
+package com.vibe2guys.backend.quiz.service;
+
+import com.vibe2guys.backend.common.exception.BusinessException;
+import com.vibe2guys.backend.common.exception.ErrorCode;
+import com.vibe2guys.backend.course.domain.CourseEnrollment;
+import com.vibe2guys.backend.course.domain.CourseInstructor;
+import com.vibe2guys.backend.course.domain.EnrollmentStatus;
+import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
+import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
+import com.vibe2guys.backend.quiz.domain.Quiz;
+import com.vibe2guys.backend.quiz.domain.QuizQuestion;
+import com.vibe2guys.backend.quiz.domain.QuizQuestionType;
+import com.vibe2guys.backend.quiz.domain.QuizSubmission;
+import com.vibe2guys.backend.quiz.domain.QuizSubmissionAnswer;
+import com.vibe2guys.backend.quiz.domain.QuizSubmissionStatus;
+import com.vibe2guys.backend.quiz.dto.CreateQuizSubmissionRequest;
+import com.vibe2guys.backend.quiz.dto.QuizDetailResponse;
+import com.vibe2guys.backend.quiz.dto.QuizListItemResponse;
+import com.vibe2guys.backend.quiz.dto.QuizQuestionResponse;
+import com.vibe2guys.backend.quiz.dto.QuizResultResponse;
+import com.vibe2guys.backend.quiz.dto.QuizSubmissionAnswerRequest;
+import com.vibe2guys.backend.quiz.dto.QuizSubmissionResponse;
+import com.vibe2guys.backend.quiz.repository.QuizQuestionRepository;
+import com.vibe2guys.backend.quiz.repository.QuizRepository;
+import com.vibe2guys.backend.quiz.repository.QuizSubmissionAnswerRepository;
+import com.vibe2guys.backend.quiz.repository.QuizSubmissionRepository;
+import com.vibe2guys.backend.user.domain.User;
+import com.vibe2guys.backend.user.domain.UserRole;
+import com.vibe2guys.backend.user.service.UserService;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class QuizService {
+
+    private final QuizRepository quizRepository;
+    private final QuizQuestionRepository quizQuestionRepository;
+    private final QuizSubmissionRepository quizSubmissionRepository;
+    private final QuizSubmissionAnswerRepository quizSubmissionAnswerRepository;
+    private final CourseEnrollmentRepository courseEnrollmentRepository;
+    private final CourseInstructorRepository courseInstructorRepository;
+    private final UserService userService;
+
+    public List<QuizListItemResponse> getQuizzes(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        validateCourseAccess(courseId, user);
+
+        List<Quiz> quizzes = quizRepository.findByCourseIdOrderByDueAtAsc(courseId);
+        List<QuizListItemResponse> responses = new ArrayList<>();
+        for (Quiz quiz : quizzes) {
+            boolean submitted = quizSubmissionRepository.findByQuizIdAndStudentId(quiz.getId(), userId).isPresent();
+            responses.add(QuizListItemResponse.of(quiz, submitted));
+        }
+        return responses;
+    }
+
+    public QuizDetailResponse getQuizDetail(Long quizId, Long userId) {
+        User user = userService.getById(userId);
+        Quiz quiz = getAccessibleQuiz(quizId, user);
+        List<QuizQuestionResponse> questions = quizQuestionRepository.findByQuizIdOrderBySortOrderAsc(quizId).stream()
+                .map(QuizQuestionResponse::from)
+                .toList();
+        return QuizDetailResponse.of(quiz, questions);
+    }
+
+    @Transactional
+    public QuizSubmissionResponse submitQuiz(Long quizId, Long userId, CreateQuizSubmissionRequest request) {
+        User user = userService.getById(userId);
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 퀴즈를 제출할 수 있습니다.");
+        }
+
+        Quiz quiz = getAccessibleQuiz(quizId, user);
+        if (quizSubmissionRepository.findByQuizIdAndStudentId(quizId, userId).isPresent()) {
+            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "이미 제출한 퀴즈입니다.");
+        }
+
+        List<QuizQuestion> questions = quizQuestionRepository.findByQuizIdOrderBySortOrderAsc(quizId);
+        Map<Long, QuizQuestion> questionMap = questions.stream().collect(Collectors.toMap(QuizQuestion::getId, Function.identity()));
+        validateAnswerSet(request.answers(), questionMap);
+
+        int objectiveScore = 0;
+        Integer subjectiveScore = null;
+        OffsetDateTime submittedAt = OffsetDateTime.now();
+        QuizSubmissionStatus status = submittedAt.isAfter(quiz.getDueAt()) ? QuizSubmissionStatus.LATE : QuizSubmissionStatus.SUBMITTED;
+
+        QuizSubmission submission = quizSubmissionRepository.save(QuizSubmission.builder()
+                .quiz(quiz)
+                .course(quiz.getCourse())
+                .student(user)
+                .objectiveScore(0)
+                .subjectiveScore(subjectiveScore)
+                .totalScore(0)
+                .status(status)
+                .submittedAt(submittedAt)
+                .build());
+
+        boolean hasSubjective = false;
+        for (QuizSubmissionAnswerRequest answerRequest : request.answers()) {
+            QuizQuestion question = questionMap.get(answerRequest.questionId());
+            int awardedScore = 0;
+            Boolean correct = null;
+
+            if (question.getQuestionType() == QuizQuestionType.MULTIPLE_CHOICE) {
+                correct = question.getAnswerKey() != null && question.getAnswerKey().equals(answerRequest.selectedChoice());
+                awardedScore = Boolean.TRUE.equals(correct) ? question.getScore() : 0;
+                objectiveScore += awardedScore;
+            } else {
+                hasSubjective = true;
+            }
+
+            quizSubmissionAnswerRepository.save(QuizSubmissionAnswer.builder()
+                    .quizSubmission(submission)
+                    .question(question)
+                    .selectedChoice(answerRequest.selectedChoice())
+                    .answerText(answerRequest.answerText())
+                    .correct(correct)
+                    .awardedScore(awardedScore)
+                    .build());
+        }
+
+        int totalScore = objectiveScore;
+        Integer finalSubjectiveScore = hasSubjective ? null : 0;
+        submission.updateScores(objectiveScore, finalSubjectiveScore, totalScore);
+
+        return QuizSubmissionResponse.from(submission);
+    }
+
+    public QuizResultResponse getMyResult(Long quizId, Long userId) {
+        User user = userService.getById(userId);
+        getAccessibleQuiz(quizId, user);
+        QuizSubmission submission = quizSubmissionRepository.findByQuizIdAndStudentId(quizId, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_SUBMISSION_NOT_FOUND, "제출한 퀴즈 결과가 없습니다."));
+        return QuizResultResponse.from(submission);
+    }
+
+    private Quiz getAccessibleQuiz(Long quizId, User user) {
+        Quiz quiz = quizRepository.findById(quizId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.QUIZ_NOT_FOUND, "퀴즈를 찾을 수 없습니다."));
+        validateCourseAccess(quiz.getCourse().getId(), user);
+        return quiz;
+    }
+
+    private void validateCourseAccess(Long courseId, User user) {
+        if (user.getRole() == UserRole.INSTRUCTOR) {
+            courseInstructorRepository.findByInstructorId(user.getId()).stream()
+                    .filter(item -> item.getCourse().getId().equals(courseId))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다."));
+            return;
+        }
+
+        CourseEnrollment enrollment = courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, user.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 강의만 접근할 수 있습니다."));
+        if (enrollment.getStatus() != EnrollmentStatus.ENROLLED) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "활성 수강 상태가 아닙니다.");
+        }
+    }
+
+    private void validateAnswerSet(List<QuizSubmissionAnswerRequest> answers, Map<Long, QuizQuestion> questionMap) {
+        if (answers.size() != questionMap.size()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "모든 문제에 대한 답안을 제출해야 합니다.");
+        }
+        for (QuizSubmissionAnswerRequest answer : answers) {
+            QuizQuestion question = questionMap.get(answer.questionId());
+            if (question == null) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "해당 퀴즈에 없는 문제입니다.");
+            }
+            if (question.getQuestionType() == QuizQuestionType.MULTIPLE_CHOICE && (answer.selectedChoice() == null || answer.selectedChoice().isBlank())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "객관식 답안은 필수입니다.");
+            }
+            if (question.getQuestionType() == QuizQuestionType.SUBJECTIVE && (answer.answerText() == null || answer.answerText().isBlank())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "주관식 답안은 필수입니다.");
+            }
+        }
+    }
+}
