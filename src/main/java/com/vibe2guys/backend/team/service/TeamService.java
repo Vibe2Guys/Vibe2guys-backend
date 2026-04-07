@@ -19,6 +19,7 @@ import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
 import com.vibe2guys.backend.team.dto.TeamMemberResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
+import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
 import com.vibe2guys.backend.team.repository.TeamChatRoomRepository;
 import com.vibe2guys.backend.team.repository.TeamMemberRepository;
 import com.vibe2guys.backend.team.repository.TeamRepository;
@@ -135,6 +136,40 @@ public class TeamService {
         );
     }
 
+    @Transactional
+    public TeamResponse updateTeamMembers(Long teamId, Long userId, UpdateTeamMembersRequest request) {
+        User user = userService.getById(userId);
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀을 찾을 수 없습니다."));
+        getManageableCourse(team.getCourse().getId(), user);
+
+        List<Long> removeMemberIds = request != null && request.removeMemberIds() != null ? request.removeMemberIds() : List.of();
+        List<Long> addMemberIds = request != null && request.addMemberIds() != null ? request.addMemberIds() : List.of();
+
+        OffsetDateTime now = OffsetDateTime.now();
+        for (Long removeMemberId : removeMemberIds) {
+            teamMemberRepository.findByTeamIdAndUserIdAndStatus(teamId, removeMemberId, TeamMemberStatus.ACTIVE)
+                    .ifPresent(member -> member.remove(now));
+        }
+
+        for (Long addMemberId : addMemberIds) {
+            ensureEnrollActive(team.getCourse().getId(), addMemberId);
+
+            for (TeamMember existingMember : teamMemberRepository.findByTeamCourseIdAndUserIdAndStatus(team.getCourse().getId(), addMemberId, TeamMemberStatus.ACTIVE)) {
+                existingMember.remove(now);
+            }
+
+            teamMemberRepository.save(TeamMember.builder()
+                    .team(team)
+                    .user(userService.getById(addMemberId))
+                    .joinedAt(now)
+                    .status(TeamMemberStatus.ACTIVE)
+                    .build());
+        }
+
+        return getTeamDetail(teamId, userId);
+    }
+
     private void archiveExistingTeams(Long courseId) {
         OffsetDateTime now = OffsetDateTime.now();
         for (Team team : teamRepository.findByCourseIdAndStatusOrderByIdAsc(courseId, TeamStatus.ACTIVE)) {
@@ -193,5 +228,11 @@ public class TeamService {
         }
         teamMemberRepository.findByTeamIdAndUserIdAndStatus(team.getId(), user.getId(), TeamMemberStatus.ACTIVE)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀만 조회할 수 있습니다."));
+    }
+
+    private void ensureEnrollActive(Long courseId, Long userId) {
+        courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, userId)
+                .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ENROLLED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 팀에 배정할 수 있습니다."));
     }
 }

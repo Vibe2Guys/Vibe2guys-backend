@@ -6,11 +6,13 @@ import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
+import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
 import com.vibe2guys.backend.team.service.TeamService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -56,5 +58,14 @@ public class TeamController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("팀 상세 조회 성공", teamService.getTeamDetail(teamId, principal.getId()));
+    }
+
+    @PatchMapping("/teams/{teamId}/members")
+    public ApiResponse<TeamResponse> updateTeamMembers(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @RequestBody(required = false) UpdateTeamMembersRequest request
+    ) {
+        return ApiResponse.success("팀원 재배치 완료", teamService.updateTeamMembers(teamId, principal.getId(), request));
     }
 }
