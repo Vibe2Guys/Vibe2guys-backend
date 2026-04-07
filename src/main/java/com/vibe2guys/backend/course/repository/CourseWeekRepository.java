@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface CourseWeekRepository extends JpaRepository<CourseWeek, Long> {
     List<CourseWeek> findByCourseIdOrderByWeekNumberAsc(Long courseId);
+
+    boolean existsByCourseIdAndWeekNumber(Long courseId, int weekNumber);
 }
