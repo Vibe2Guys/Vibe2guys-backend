@@ -4,7 +4,10 @@ import com.vibe2guys.backend.common.response.ApiResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
 import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
+import com.vibe2guys.backend.team.dto.ChatRoomResponse;
+import com.vibe2guys.backend.team.dto.CreateTeamChatMessageRequest;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
+import com.vibe2guys.backend.team.dto.TeamChatMessageResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
 import com.vibe2guys.backend.team.service.TeamService;
@@ -67,5 +70,30 @@ public class TeamController {
             @RequestBody(required = false) UpdateTeamMembersRequest request
     ) {
         return ApiResponse.success("팀원 재배치 완료", teamService.updateTeamMembers(teamId, principal.getId(), request));
+    }
+
+    @GetMapping("/teams/{teamId}/chat-room")
+    public ApiResponse<ChatRoomResponse> getChatRoom(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("팀 채팅방 조회 성공", teamService.getChatRoom(teamId, principal.getId()));
+    }
+
+    @GetMapping("/chat-rooms/{chatRoomId}/messages")
+    public ApiResponse<List<TeamChatMessageResponse>> getMessages(
+            @PathVariable Long chatRoomId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("팀 채팅 메시지 조회 성공", teamService.getMessages(chatRoomId, principal.getId()));
+    }
+
+    @PostMapping("/chat-rooms/{chatRoomId}/messages")
+    public ApiResponse<TeamChatMessageResponse> createMessage(
+            @PathVariable Long chatRoomId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateTeamChatMessageRequest request
+    ) {
+        return ApiResponse.success("팀 채팅 메시지 저장 완료", teamService.createMessage(chatRoomId, principal.getId(), request));
     }
 }

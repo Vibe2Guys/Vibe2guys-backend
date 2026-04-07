@@ -11,15 +11,20 @@ import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
 import com.vibe2guys.backend.course.repository.CourseRepository;
 import com.vibe2guys.backend.team.domain.Team;
 import com.vibe2guys.backend.team.domain.TeamChatRoom;
+import com.vibe2guys.backend.team.domain.TeamChatMessage;
 import com.vibe2guys.backend.team.domain.TeamMember;
 import com.vibe2guys.backend.team.domain.TeamMemberStatus;
 import com.vibe2guys.backend.team.domain.TeamStatus;
 import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
+import com.vibe2guys.backend.team.dto.ChatRoomResponse;
+import com.vibe2guys.backend.team.dto.CreateTeamChatMessageRequest;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
+import com.vibe2guys.backend.team.dto.TeamChatMessageResponse;
 import com.vibe2guys.backend.team.dto.TeamMemberResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
+import com.vibe2guys.backend.team.repository.TeamChatMessageRepository;
 import com.vibe2guys.backend.team.repository.TeamChatRoomRepository;
 import com.vibe2guys.backend.team.repository.TeamMemberRepository;
 import com.vibe2guys.backend.team.repository.TeamRepository;
@@ -43,6 +48,7 @@ public class TeamService {
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
     private final TeamChatRoomRepository teamChatRoomRepository;
+    private final TeamChatMessageRepository teamChatMessageRepository;
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
@@ -170,6 +176,42 @@ public class TeamService {
         return getTeamDetail(teamId, userId);
     }
 
+    public ChatRoomResponse getChatRoom(Long teamId, Long userId) {
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀을 찾을 수 없습니다."));
+        validateTeamAccess(team, userService.getById(userId));
+        TeamChatRoom chatRoom = teamChatRoomRepository.findByTeamId(teamId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀 채팅방을 찾을 수 없습니다."));
+        return ChatRoomResponse.from(chatRoom);
+    }
+
+    public List<TeamChatMessageResponse> getMessages(Long chatRoomId, Long userId) {
+        TeamChatRoom chatRoom = teamChatRoomRepository.findById(chatRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀 채팅방을 찾을 수 없습니다."));
+        validateTeamAccess(chatRoom.getTeam(), userService.getById(userId));
+        return teamChatMessageRepository.findByChatRoomIdOrderBySentAtAsc(chatRoomId).stream()
+                .map(TeamChatMessageResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public TeamChatMessageResponse createMessage(Long chatRoomId, Long userId, CreateTeamChatMessageRequest request) {
+        User user = userService.getById(userId);
+        TeamChatRoom chatRoom = teamChatRoomRepository.findById(chatRoomId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀 채팅방을 찾을 수 없습니다."));
+        Team team = chatRoom.getTeam();
+        ensureStudentTeamMember(team.getId(), user);
+
+        TeamChatMessage message = teamChatMessageRepository.save(TeamChatMessage.builder()
+                .chatRoom(chatRoom)
+                .team(team)
+                .sender(user)
+                .messageBody(request.messageBody().trim())
+                .sentAt(OffsetDateTime.now())
+                .build());
+        return TeamChatMessageResponse.from(message);
+    }
+
     private void archiveExistingTeams(Long courseId) {
         OffsetDateTime now = OffsetDateTime.now();
         for (Team team : teamRepository.findByCourseIdAndStatusOrderByIdAsc(courseId, TeamStatus.ACTIVE)) {
@@ -234,5 +276,13 @@ public class TeamService {
         courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, userId)
                 .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ENROLLED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 팀에 배정할 수 있습니다."));
+    }
+
+    private void ensureStudentTeamMember(Long teamId, User user) {
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 팀 채팅 메시지를 보낼 수 있습니다.");
+        }
+        teamMemberRepository.findByTeamIdAndUserIdAndStatus(teamId, user.getId(), TeamMemberStatus.ACTIVE)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀 채팅방에만 메시지를 보낼 수 있습니다."));
     }
 }
