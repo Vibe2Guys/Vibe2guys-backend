@@ -2,6 +2,8 @@ package com.vibe2guys.backend.quiz.controller;
 
 import com.vibe2guys.backend.common.response.ApiResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
+import com.vibe2guys.backend.quiz.dto.CreateQuizRequest;
+import com.vibe2guys.backend.quiz.dto.CreateQuizResponse;
 import com.vibe2guys.backend.quiz.dto.CreateQuizSubmissionRequest;
 import com.vibe2guys.backend.quiz.dto.QuizDetailResponse;
 import com.vibe2guys.backend.quiz.dto.QuizListItemResponse;
@@ -24,6 +26,15 @@ import java.util.List;
 public class QuizController {
 
     private final QuizService quizService;
+
+    @PostMapping("/api/v1/courses/{courseId}/quizzes")
+    public ApiResponse<CreateQuizResponse> createQuiz(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateQuizRequest request
+    ) {
+        return ApiResponse.success("퀴즈 생성 완료", quizService.createQuiz(courseId, principal.getId(), request));
+    }
 
     @GetMapping("/api/v1/courses/{courseId}/quizzes")
     public ApiResponse<List<QuizListItemResponse>> getQuizzes(

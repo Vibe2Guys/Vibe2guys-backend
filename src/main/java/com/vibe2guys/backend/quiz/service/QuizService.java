@@ -2,11 +2,16 @@ package com.vibe2guys.backend.quiz.service;
 
 import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
+import com.vibe2guys.backend.course.domain.Course;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
 import com.vibe2guys.backend.course.domain.CourseInstructor;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
+import com.vibe2guys.backend.course.repository.CourseRepository;
+import com.vibe2guys.backend.quiz.dto.CreateQuizQuestionRequest;
+import com.vibe2guys.backend.quiz.dto.CreateQuizRequest;
+import com.vibe2guys.backend.quiz.dto.CreateQuizResponse;
 import com.vibe2guys.backend.quiz.domain.Quiz;
 import com.vibe2guys.backend.quiz.domain.QuizQuestion;
 import com.vibe2guys.backend.quiz.domain.QuizQuestionType;
@@ -49,7 +54,36 @@ public class QuizService {
     private final QuizSubmissionAnswerRepository quizSubmissionAnswerRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
+    private final CourseRepository courseRepository;
     private final UserService userService;
+
+    @Transactional
+    public CreateQuizResponse createQuiz(Long courseId, Long userId, CreateQuizRequest request) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        validateCreateQuizRequest(request);
+
+        Quiz quiz = quizRepository.save(Quiz.builder()
+                .course(course)
+                .title(request.title().trim())
+                .dueAt(request.dueAt())
+                .createdBy(user)
+                .build());
+
+        for (CreateQuizQuestionRequest questionRequest : request.questions()) {
+            quizQuestionRepository.save(QuizQuestion.builder()
+                    .quiz(quiz)
+                    .questionType(questionRequest.questionType())
+                    .questionText(questionRequest.questionText().trim())
+                    .choicesJson(questionRequest.choices())
+                    .answerKey(questionRequest.answerKey() != null ? questionRequest.answerKey().trim() : null)
+                    .score(questionRequest.score())
+                    .sortOrder(questionRequest.sortOrder())
+                    .build());
+        }
+
+        return CreateQuizResponse.of(quiz, request.questions().size());
+    }
 
     public List<QuizListItemResponse> getQuizzes(Long courseId, Long userId) {
         User user = userService.getById(userId);
@@ -152,6 +186,9 @@ public class QuizService {
     }
 
     private void validateCourseAccess(Long courseId, User user) {
+        if (user.getRole() == UserRole.ADMIN) {
+            return;
+        }
         if (user.getRole() == UserRole.INSTRUCTOR) {
             courseInstructorRepository.findByInstructorId(user.getId()).stream()
                     .filter(item -> item.getCourse().getId().equals(courseId))
@@ -164,6 +201,54 @@ public class QuizService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 강의만 접근할 수 있습니다."));
         if (enrollment.getStatus() != EnrollmentStatus.ENROLLED) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "활성 수강 상태가 아닙니다.");
+        }
+    }
+
+    private Course getManageableCourse(Long courseId, User user) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "강의를 찾을 수 없습니다."));
+        if (user.getRole() == UserRole.ADMIN) {
+            return course;
+        }
+        if (user.getRole() != UserRole.INSTRUCTOR) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "강의 관리 권한이 없습니다.");
+        }
+        courseInstructorRepository.findByInstructorId(user.getId()).stream()
+                .filter(item -> item.getCourse().getId().equals(courseId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다."));
+        return course;
+    }
+
+    private void validateCreateQuizRequest(CreateQuizRequest request) {
+        if (request.dueAt().isBefore(OffsetDateTime.now())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "마감 기한은 현재 시각 이후여야 합니다.");
+        }
+        for (CreateQuizQuestionRequest question : request.questions()) {
+            validateQuestion(question);
+        }
+    }
+
+    private void validateQuestion(CreateQuizQuestionRequest question) {
+        if (question.questionType() == QuizQuestionType.MULTIPLE_CHOICE) {
+            if (question.choices() == null || question.choices().size() < 2) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "객관식 문제는 2개 이상의 선택지가 필요합니다.");
+            }
+            if (question.answerKey() == null || question.answerKey().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "객관식 문제는 answerKey가 필요합니다.");
+            }
+            boolean answerExists = question.choices().stream()
+                    .filter(choice -> choice != null)
+                    .map(String::trim)
+                    .anyMatch(choice -> choice.equals(question.answerKey().trim()));
+            if (!answerExists) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "객관식 answerKey는 선택지 중 하나여야 합니다.");
+            }
+            return;
+        }
+
+        if (question.choices() != null && !question.choices().isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "주관식 문제에는 choices를 포함할 수 없습니다.");
         }
     }
 
