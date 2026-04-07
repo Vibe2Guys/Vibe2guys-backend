@@ -68,7 +68,12 @@ Authorization: Bearer {{studentAccessToken}}
 Content-Type: application/json
 
 {
-  "answers": []
+  "answers": [
+    {
+      "questionId": 1,
+      "selectedChoice": "A"
+    }
+  ]
 }
 
 ### Get student dashboard
@@ -101,9 +106,11 @@ Content-Type: application/json
 }
 
 ### Admin get users
-GET {{baseUrl}}/api/v1/admin/users?page=0&size=20
+GET {{baseUrl}}/api/v1/backoffice/users?page=0&size=20
 Authorization: Bearer {{adminAccessToken}}
+X-Backoffice-Key: {{backofficeAccessKey}}
 
 ### Admin get analytics config
-GET {{baseUrl}}/api/v1/admin/analytics-config
+GET {{baseUrl}}/api/v1/backoffice/analytics-config
 Authorization: Bearer {{adminAccessToken}}
+X-Backoffice-Key: {{backofficeAccessKey}}

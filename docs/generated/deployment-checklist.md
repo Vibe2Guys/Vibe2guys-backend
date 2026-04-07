@@ -7,6 +7,7 @@
 - set `DB_PASSWORD`
 - set `JWT_SECRET`
 - set `JWT_REFRESH_TOKEN_HASH_SECRET`
+- set `BACKOFFICE_ACCESS_KEY`
 - confirm JWT signing secret and refresh hash secret are different
 - set `SPRING_PROFILES_ACTIVE`
 
@@ -22,6 +23,7 @@
 - swagger exposure policy is decided before public deployment
 - reverse proxy forwards real client IP if login throttle relies on `X-Forwarded-For`
 - access logs do not print tokens or passwords
+- backoffice endpoints require both admin JWT and `X-Backoffice-Key`
 
 ## Runtime
 
@@ -37,6 +39,7 @@
 - `GET /api/v1/courses`
 - `POST /api/v1/contents/{contentId}/progress`
 - `GET /api/v1/dashboard/student`
+- `GET /api/v1/backoffice/users`
 - `GET /swagger-ui.html`
 
 ## Observability
