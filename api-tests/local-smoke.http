@@ -1,0 +1,109 @@
+### Register student
+POST {{baseUrl}}/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "name": "테스트학생",
+  "email": "{{studentEmail}}",
+  "password": "{{studentPassword}}",
+  "role": "STUDENT"
+}
+
+### Login student
+POST {{baseUrl}}/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "{{studentEmail}}",
+  "password": "{{studentPassword}}"
+}
+
+### Get my profile
+GET {{baseUrl}}/api/v1/users/me
+Authorization: Bearer {{studentAccessToken}}
+
+### Get course list
+GET {{baseUrl}}/api/v1/courses?page=0&size=10
+Authorization: Bearer {{studentAccessToken}}
+
+### Enroll course
+POST {{baseUrl}}/api/v1/courses/{{courseId}}/enrollments
+Authorization: Bearer {{studentAccessToken}}
+Content-Type: application/json
+
+{}
+
+### Get content detail
+GET {{baseUrl}}/api/v1/contents/{{contentId}}
+Authorization: Bearer {{studentAccessToken}}
+
+### Save content progress
+POST {{baseUrl}}/api/v1/contents/{{contentId}}/progress
+Authorization: Bearer {{studentAccessToken}}
+Content-Type: application/json
+
+{
+  "watchedSeconds": 120,
+  "totalSeconds": 1200,
+  "lastPositionSeconds": 120,
+  "replayCount": 0,
+  "stoppedSegmentStart": 110,
+  "stoppedSegmentEnd": 120,
+  "eventType": "PAUSE"
+}
+
+### Submit assignment
+POST {{baseUrl}}/api/v1/assignments/{{assignmentId}}/submissions
+Authorization: Bearer {{studentAccessToken}}
+Content-Type: application/json
+
+{
+  "answerText": "과제 제출 테스트입니다.",
+  "fileUrls": []
+}
+
+### Submit quiz
+POST {{baseUrl}}/api/v1/quizzes/{{quizId}}/submissions
+Authorization: Bearer {{studentAccessToken}}
+Content-Type: application/json
+
+{
+  "answers": []
+}
+
+### Get student dashboard
+GET {{baseUrl}}/api/v1/dashboard/student
+Authorization: Bearer {{studentAccessToken}}
+
+### Get notifications
+GET {{baseUrl}}/api/v1/notifications/me
+Authorization: Bearer {{studentAccessToken}}
+
+### Mark notification as read
+PATCH {{baseUrl}}/api/v1/notifications/{{notificationId}}/read
+Authorization: Bearer {{studentAccessToken}}
+
+### Refresh token
+POST {{baseUrl}}/api/v1/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "{{studentRefreshToken}}"
+}
+
+### Logout
+POST {{baseUrl}}/api/v1/auth/logout
+Authorization: Bearer {{studentAccessToken}}
+Content-Type: application/json
+
+{
+  "refreshToken": "{{studentRefreshToken}}"
+}
+
+### Admin get users
+GET {{baseUrl}}/api/v1/admin/users?page=0&size=20
+Authorization: Bearer {{adminAccessToken}}
+
+### Admin get analytics config
+GET {{baseUrl}}/api/v1/admin/analytics-config
+Authorization: Bearer {{adminAccessToken}}
