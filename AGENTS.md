@@ -117,6 +117,33 @@ Coordination rules:
 - Cross-module schema changes must update `docs/generated/db-schema.md`.
 - Performance work should not redefine product behavior; it validates and hardens agreed behavior.
 
+## Git Workflow Rules
+
+- Commit and push in feature-sized units.
+- One commit should contain one feature, one fix, one refactor, or one docs change only.
+- Do not mix unrelated work in the same commit.
+- Verify compilation or relevant checks before each commit when practical.
+
+Commit message format:
+
+- `<type>(<scope>): <summary>`
+
+Allowed types:
+
+- `feat`
+- `fix`
+- `refactor`
+- `docs`
+- `test`
+- `chore`
+
+Example messages:
+
+- `feat(auth): add register login and refresh flow`
+- `fix(auth): restrict bearer auth to access tokens`
+- `feat(course): add my courses and enrollment api`
+- `docs(security): add secure coding rules`
+
 ## Quality Bar
 
 - Authentication and authorization come before convenience features.
