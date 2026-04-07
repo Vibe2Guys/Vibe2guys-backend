@@ -31,6 +31,7 @@ Error response:
 - 회원가입
 - 로그인
 - 토큰 재발급
+- 로그아웃
 - 내 정보 조회
 - 내 정보 수정
 
@@ -88,6 +89,31 @@ Request:
 ```json
 {
   "refreshToken": "refresh-token"
+}
+```
+
+## `POST /api/v1/auth/logout`
+
+현재 사용자의 refresh token 세션을 종료한다.
+
+Request:
+
+```json
+{
+  "refreshToken": "refresh-token"
+}
+```
+
+Response:
+
+```json
+{
+  "success": true,
+  "message": "로그아웃 완료",
+  "data": {
+    "revoked": true,
+    "revokedAt": "2026-04-08T15:30:00+09:00"
+  }
 }
 ```
 
@@ -174,4 +200,5 @@ Response:
 - Spring Security + JWT 기준으로 구현한다.
 - Flutter 앱에서 토큰 재사용이 쉬워야 하므로 응답 구조를 단순하게 유지한다.
 - Refresh token은 MVP 범위에 포함하며 DB 저장과 회전을 지원한다.
+- 로그아웃은 refresh token revoke 방식으로 처리한다.
 - 로그인 실패가 반복되면 이메일과 클라이언트 IP 기준으로 일시 차단한다.

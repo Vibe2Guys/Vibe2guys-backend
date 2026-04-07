@@ -4,6 +4,8 @@ import com.vibe2guys.backend.auth.domain.RefreshToken;
 import com.vibe2guys.backend.auth.dto.AuthUserResponse;
 import com.vibe2guys.backend.auth.dto.LoginRequest;
 import com.vibe2guys.backend.auth.dto.LoginResponse;
+import com.vibe2guys.backend.auth.dto.LogoutRequest;
+import com.vibe2guys.backend.auth.dto.LogoutResponse;
 import com.vibe2guys.backend.auth.dto.RegisterRequest;
 import com.vibe2guys.backend.auth.dto.RegisterResponse;
 import com.vibe2guys.backend.auth.dto.TokenRefreshRequest;
@@ -132,6 +134,21 @@ public class AuthService {
                 .build());
 
         return new TokenRefreshResponse(newAccessToken, newRefreshToken);
+    }
+
+    @Transactional
+    public LogoutResponse logout(Long userId, LogoutRequest request) {
+        jwtTokenProvider.validateRefreshToken(request.refreshToken());
+        String refreshTokenHash = refreshTokenHasher.hash(request.refreshToken());
+
+        RefreshToken refreshToken = refreshTokenRepository.findByTokenHashAndUserId(refreshTokenHash, userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.TOKEN_INVALID, "사용자 세션과 일치하는 refresh token이 없습니다."));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        if (!refreshToken.isRevoked()) {
+            refreshToken.revoke(now);
+        }
+        return new LogoutResponse(true, refreshToken.getRevokedAt());
     }
 
     private String resolveClientIp(HttpServletRequest request) {

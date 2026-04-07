@@ -2,15 +2,19 @@ package com.vibe2guys.backend.auth.controller;
 
 import com.vibe2guys.backend.auth.dto.LoginRequest;
 import com.vibe2guys.backend.auth.dto.LoginResponse;
+import com.vibe2guys.backend.auth.dto.LogoutRequest;
+import com.vibe2guys.backend.auth.dto.LogoutResponse;
 import com.vibe2guys.backend.auth.dto.RegisterRequest;
 import com.vibe2guys.backend.auth.dto.RegisterResponse;
 import com.vibe2guys.backend.auth.dto.TokenRefreshRequest;
 import com.vibe2guys.backend.auth.dto.TokenRefreshResponse;
 import com.vibe2guys.backend.auth.service.AuthService;
 import com.vibe2guys.backend.common.response.ApiResponse;
+import com.vibe2guys.backend.common.security.UserPrincipal;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,5 +40,13 @@ public class AuthController {
     @PostMapping("/refresh")
     public ApiResponse<TokenRefreshResponse> refresh(@Valid @RequestBody TokenRefreshRequest request) {
         return ApiResponse.success("토큰 재발급 성공", authService.refresh(request));
+    }
+
+    @PostMapping("/logout")
+    public ApiResponse<LogoutResponse> logout(
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody LogoutRequest request
+    ) {
+        return ApiResponse.success("로그아웃 완료", authService.logout(principal.getId(), request));
     }
 }
