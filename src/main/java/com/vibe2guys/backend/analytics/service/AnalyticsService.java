@@ -1,15 +1,30 @@
 package com.vibe2guys.backend.analytics.service;
 
+import com.vibe2guys.backend.ai.domain.AiFollowUpAnalysis;
+import com.vibe2guys.backend.ai.repository.AiFollowUpAnalysisRepository;
 import com.vibe2guys.backend.analytics.domain.DailyAnalyticsSnapshot;
+import com.vibe2guys.backend.analytics.domain.InstructorIntervention;
 import com.vibe2guys.backend.analytics.domain.RiskLevel;
+import com.vibe2guys.backend.analytics.dto.CreateInstructorInterventionRequest;
+import com.vibe2guys.backend.analytics.dto.FollowUpUnderstandingItemResponse;
 import com.vibe2guys.backend.analytics.dto.InstructorDashboardResponse;
+import com.vibe2guys.backend.analytics.dto.InstructorInterventionItemResponse;
 import com.vibe2guys.backend.analytics.dto.InstructorRiskStudentItemResponse;
+import com.vibe2guys.backend.analytics.dto.InstructorStudentDetailResponse;
+import com.vibe2guys.backend.analytics.dto.InstructorUnderstandingLowStudentResponse;
 import com.vibe2guys.backend.analytics.dto.MyReportResponse;
+import com.vibe2guys.backend.analytics.dto.ScoreDistributionBucketResponse;
+import com.vibe2guys.backend.analytics.dto.ScoreDistributionResponse;
+import com.vibe2guys.backend.analytics.dto.StudentAiUnderstandingResponse;
+import com.vibe2guys.backend.analytics.dto.StudentAssignmentProgressItemResponse;
+import com.vibe2guys.backend.analytics.dto.StudentContentProgressItemResponse;
 import com.vibe2guys.backend.analytics.dto.StudentCourseAnalyticsItemResponse;
 import com.vibe2guys.backend.analytics.dto.StudentDashboardResponse;
 import com.vibe2guys.backend.analytics.dto.StudentRecommendationsResponse;
 import com.vibe2guys.backend.analytics.dto.StudentRiskResponse;
 import com.vibe2guys.backend.analytics.dto.StudentScoresResponse;
+import com.vibe2guys.backend.analytics.dto.StudentQuizProgressItemResponse;
+import com.vibe2guys.backend.analytics.repository.InstructorInterventionRepository;
 import com.vibe2guys.backend.analytics.repository.DailyAnalyticsSnapshotRepository;
 import com.vibe2guys.backend.assignment.domain.Assignment;
 import com.vibe2guys.backend.assignment.domain.AssignmentSubmission;
@@ -56,6 +71,8 @@ public class AnalyticsService {
     private static final String SCORING_VERSION = "rules-v1";
 
     private final DailyAnalyticsSnapshotRepository snapshotRepository;
+    private final InstructorInterventionRepository instructorInterventionRepository;
+    private final AiFollowUpAnalysisRepository aiFollowUpAnalysisRepository;
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
@@ -80,6 +97,31 @@ public class AnalyticsService {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "조회 가능한 학습 스냅샷이 없습니다.");
         }
         return StudentScoresResponse.from(aggregateSnapshots(snapshots));
+    }
+
+    public StudentAiUnderstandingResponse getStudentAiUnderstanding(Long studentId, Long requesterId) {
+        User requester = userService.getById(requesterId);
+        User student = userService.getById(studentId);
+        List<DailyAnalyticsSnapshot> snapshots = resolveSnapshotsForStudent(student, requester);
+        if (snapshots.isEmpty()) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "조회 가능한 이해도 분석이 없습니다.");
+        }
+
+        List<AiFollowUpAnalysis> analyses = resolveVisibleFollowUpAnalyses(student, requester, snapshots);
+        DailyAnalyticsSnapshot overall = aggregateSnapshots(snapshots);
+        List<String> strengths = buildUnderstandingStrengths(overall, analyses);
+        List<String> gaps = buildUnderstandingGaps(overall, analyses);
+        String summary = buildUnderstandingSummary(student.getName(), overall, strengths, gaps);
+
+        return new StudentAiUnderstandingResponse(
+                student.getId(),
+                student.getName(),
+                overall.getUnderstandingScore(),
+                summary,
+                strengths,
+                gaps,
+                analyses.stream().limit(5).map(FollowUpUnderstandingItemResponse::from).toList()
+        );
     }
 
     public StudentDashboardResponse getStudentDashboard(Long userId) {
@@ -172,6 +214,111 @@ public class AnalyticsService {
                 .toList();
     }
 
+    public List<InstructorUnderstandingLowStudentResponse> getLowUnderstandingStudents(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        getManageableCourse(courseId, user);
+        return ensureSnapshotsForCourse(courseId, LocalDate.now()).stream()
+                .filter(snapshot -> snapshot.getUnderstandingScore() < 60)
+                .map(InstructorUnderstandingLowStudentResponse::from)
+                .toList();
+    }
+
+    public InstructorStudentDetailResponse getInstructorStudentDetail(Long courseId, Long studentId, Long userId) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        User student = getCourseStudent(courseId, studentId);
+        DailyAnalyticsSnapshot snapshot = ensureSnapshotForCourseStudent(courseId, studentId, LocalDate.now());
+
+        Map<Long, ContentProgressSummary> progressByContentId = new HashMap<>();
+        for (ContentProgressSummary summary : progressSummaryRepository.findByCourseIdAndStudentId(courseId, studentId)) {
+            progressByContentId.put(summary.getContent().getId(), summary);
+        }
+        Map<Long, AttendanceSummary> attendanceByContentId = new HashMap<>();
+        for (AttendanceSummary summary : attendanceSummaryRepository.findByCourseIdAndStudentId(courseId, studentId)) {
+            attendanceByContentId.put(summary.getContent().getId(), summary);
+        }
+        Map<Long, AssignmentSubmission> submissionByAssignmentId = new HashMap<>();
+        for (AssignmentSubmission submission : assignmentSubmissionRepository.findByCourseIdAndStudentId(courseId, studentId)) {
+            submissionByAssignmentId.put(submission.getAssignment().getId(), submission);
+        }
+        Map<Long, QuizSubmission> submissionByQuizId = new HashMap<>();
+        for (QuizSubmission submission : quizSubmissionRepository.findByCourseIdAndStudentId(courseId, studentId)) {
+            submissionByQuizId.put(submission.getQuiz().getId(), submission);
+        }
+
+        List<StudentAssignmentProgressItemResponse> assignments = assignmentRepository.findByCourseIdOrderByDueAtAsc(courseId).stream()
+                .map(assignment -> StudentAssignmentProgressItemResponse.of(assignment, submissionByAssignmentId.get(assignment.getId())))
+                .toList();
+        List<StudentQuizProgressItemResponse> quizzes = quizRepository.findByCourseIdOrderByDueAtAsc(courseId).stream()
+                .map(quiz -> StudentQuizProgressItemResponse.of(quiz, submissionByQuizId.get(quiz.getId())))
+                .toList();
+        List<StudentContentProgressItemResponse> contents = contentRepository.findByCourseIdOrderByIdAsc(courseId).stream()
+                .map(content -> StudentContentProgressItemResponse.of(
+                        content,
+                        progressByContentId.get(content.getId()),
+                        attendanceByContentId.get(content.getId())
+                ))
+                .toList();
+
+        return new InstructorStudentDetailResponse(
+                student.getId(),
+                student.getName(),
+                course.getId(),
+                course.getTitle(),
+                StudentScoresResponse.from(snapshot),
+                StudentRiskResponse.from(snapshot),
+                buildStudentAiUnderstandingForCourse(student, courseId, snapshot),
+                assignments,
+                quizzes,
+                contents,
+                instructorInterventionRepository.findByCourseIdAndStudentIdOrderByCreatedAtDesc(courseId, studentId).stream()
+                        .map(InstructorInterventionItemResponse::from)
+                        .toList()
+        );
+    }
+
+    public List<InstructorInterventionItemResponse> getInterventions(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        getManageableCourse(courseId, user);
+        return instructorInterventionRepository.findByCourseIdOrderByCreatedAtDesc(courseId).stream()
+                .map(InstructorInterventionItemResponse::from)
+                .toList();
+    }
+
+    public InstructorInterventionItemResponse createIntervention(Long courseId, Long userId, CreateInstructorInterventionRequest request) {
+        User instructor = userService.getById(userId);
+        Course course = getManageableCourse(courseId, instructor);
+        User student = getCourseStudent(courseId, request.studentId());
+
+        List<String> resourceUrls = request.resourceUrls() == null ? List.of() : request.resourceUrls().stream()
+                .map(String::trim)
+                .filter(value -> !value.isBlank())
+                .toList();
+
+        InstructorIntervention intervention = instructorInterventionRepository.save(InstructorIntervention.builder()
+                .course(course)
+                .student(student)
+                .instructor(instructor)
+                .type(request.type())
+                .title(request.title().trim())
+                .message(request.message().trim())
+                .resourceUrls(resourceUrls)
+                .build());
+        return InstructorInterventionItemResponse.from(intervention);
+    }
+
+    public ScoreDistributionResponse getScoreDistribution(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        List<DailyAnalyticsSnapshot> snapshots = ensureSnapshotsForCourse(courseId, LocalDate.now());
+        return new ScoreDistributionResponse(
+                course.getId(),
+                course.getTitle(),
+                buildDistributionBuckets(snapshots.stream().map(DailyAnalyticsSnapshot::getUnderstandingScore).toList()),
+                buildDistributionBuckets(snapshots.stream().map(DailyAnalyticsSnapshot::getDropoutRiskScore).toList())
+        );
+    }
+
     @Transactional
     @Scheduled(cron = "0 0 2 * * *")
     public void computeDailySnapshots() {
@@ -217,6 +364,50 @@ public class AnalyticsService {
             }
         }
         return visible;
+    }
+
+    private List<AiFollowUpAnalysis> resolveVisibleFollowUpAnalyses(User student, User requester, List<DailyAnalyticsSnapshot> snapshots) {
+        if (requester.getRole() == UserRole.ADMIN || requester.getId().equals(student.getId())) {
+            return aiFollowUpAnalysisRepository.findByQuestionStudentIdOrderByAnalyzedAtDesc(student.getId());
+        }
+        List<AiFollowUpAnalysis> analyses = new ArrayList<>();
+        for (DailyAnalyticsSnapshot snapshot : snapshots) {
+            analyses.addAll(aiFollowUpAnalysisRepository.findByQuestionStudentIdAndQuestionCourseIdOrderByAnalyzedAtDesc(
+                    student.getId(),
+                    snapshot.getCourse().getId()
+            ));
+        }
+        return analyses;
+    }
+
+    private User getCourseStudent(Long courseId, Long studentId) {
+        CourseEnrollment enrollment = courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, studentId)
+                .filter(item -> item.getStatus() == EnrollmentStatus.ENROLLED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 조회할 수 있습니다."));
+        return enrollment.getStudent();
+    }
+
+    private DailyAnalyticsSnapshot ensureSnapshotForCourseStudent(Long courseId, Long studentId, LocalDate snapshotDate) {
+        CourseEnrollment enrollment = courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, studentId)
+                .filter(item -> item.getStatus() == EnrollmentStatus.ENROLLED)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 조회할 수 있습니다."));
+        return upsertSnapshot(enrollment.getStudent(), enrollment.getCourse(), snapshotDate);
+    }
+
+    private StudentAiUnderstandingResponse buildStudentAiUnderstandingForCourse(User student, Long courseId, DailyAnalyticsSnapshot snapshot) {
+        List<AiFollowUpAnalysis> analyses = aiFollowUpAnalysisRepository
+                .findByQuestionStudentIdAndQuestionCourseIdOrderByAnalyzedAtDesc(student.getId(), courseId);
+        List<String> strengths = buildUnderstandingStrengths(snapshot, analyses);
+        List<String> gaps = buildUnderstandingGaps(snapshot, analyses);
+        return new StudentAiUnderstandingResponse(
+                student.getId(),
+                student.getName(),
+                snapshot.getUnderstandingScore(),
+                buildUnderstandingSummary(student.getName(), snapshot, strengths, gaps),
+                strengths,
+                gaps,
+                analyses.stream().limit(5).map(FollowUpUnderstandingItemResponse::from).toList()
+        );
     }
 
     private Course getManageableCourse(Long courseId, User user) {
@@ -444,6 +635,60 @@ public class AnalyticsService {
 
     private int clamp(int score) {
         return Math.max(0, Math.min(100, score));
+    }
+
+    private List<String> buildUnderstandingStrengths(DailyAnalyticsSnapshot snapshot, List<AiFollowUpAnalysis> analyses) {
+        List<String> strengths = new ArrayList<>();
+        if (snapshot.getUnderstandingScore() >= 70) {
+            strengths.add("퀴즈와 과제 기반 이해도 점수가 안정적입니다.");
+        }
+        if (analyses.stream().anyMatch(analysis -> analysis.getUnderstandingScore() >= 70)) {
+            strengths.add("꼬리질문 답변에서 개념 연결이 잘 드러났습니다.");
+        }
+        if (strengths.isEmpty()) {
+            strengths.add("기초 개념은 유지하고 있으나 추가 보강이 필요합니다.");
+        }
+        return strengths;
+    }
+
+    private List<String> buildUnderstandingGaps(DailyAnalyticsSnapshot snapshot, List<AiFollowUpAnalysis> analyses) {
+        List<String> gaps = new ArrayList<>();
+        if (snapshot.getUnderstandingScore() < 60) {
+            gaps.add("퀴즈 또는 적용형 문항에서 이해도 저하가 보입니다.");
+        }
+        if (analyses.stream().anyMatch(analysis -> analysis.getUnderstandingScore() < 60)) {
+            gaps.add("꼬리질문 답변에서 개념 간 연결이 약합니다.");
+        }
+        if (snapshot.getEngagementScore() < 60) {
+            gaps.add("진도와 참여 흐름이 이해도에 영향을 주고 있습니다.");
+        }
+        if (gaps.isEmpty()) {
+            gaps.add("현재 큰 이해도 공백은 보이지 않습니다.");
+        }
+        return gaps;
+    }
+
+    private String buildUnderstandingSummary(String studentName, DailyAnalyticsSnapshot snapshot, List<String> strengths, List<String> gaps) {
+        if (snapshot.getUnderstandingScore() >= 70) {
+            return studentName + " 학생은 핵심 개념 이해가 비교적 안정적이며, " + strengths.getFirst();
+        }
+        return studentName + " 학생은 현재 이해도 보강이 필요합니다. " + gaps.getFirst();
+    }
+
+    private List<ScoreDistributionBucketResponse> buildDistributionBuckets(List<Integer> scores) {
+        int[] counts = new int[5];
+        for (Integer score : scores) {
+            int normalized = score == null ? 0 : clamp(score);
+            int index = Math.min(4, normalized / 20);
+            counts[index]++;
+        }
+        return List.of(
+                new ScoreDistributionBucketResponse("0-19", counts[0]),
+                new ScoreDistributionBucketResponse("20-39", counts[1]),
+                new ScoreDistributionBucketResponse("40-59", counts[2]),
+                new ScoreDistributionBucketResponse("60-79", counts[3]),
+                new ScoreDistributionBucketResponse("80-100", counts[4])
+        );
     }
 
     private record AnalyticsMetrics(

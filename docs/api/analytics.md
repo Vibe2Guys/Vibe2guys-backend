@@ -41,6 +41,8 @@ Response:
 
 교수자용 학생 개별 이해도 분석 결과를 조회한다.
 
+응답에는 규칙 기반 이해도 점수, 강점/공백 요약, 최근 꼬리질문 분석 결과를 포함한다.
+
 ### `GET /api/v1/students/{studentId}/risk`
 
 학생의 이탈 위험 점수와 이유를 조회한다.
@@ -72,9 +74,24 @@ Response:
 - `GET /api/v1/instructors/courses/{courseId}/students/understanding-low`
 - `GET /api/v1/instructors/courses/{courseId}/students/{studentId}`
 - `GET /api/v1/instructors/courses/{courseId}/interventions`
+- `POST /api/v1/instructors/courses/{courseId}/interventions`
 - `GET /api/v1/instructors/courses/{courseId}/score-distribution`
 
 교수자 대시보드는 평균 진도, 고위험 학생 수, 병목 개념, 팀 경고 수를 바로 그릴 수 있어야 한다.
+
+`POST /api/v1/instructors/courses/{courseId}/interventions` 요청 예시:
+
+```json
+{
+  "studentId": 12,
+  "type": "COUNSELING",
+  "title": "1:1 상담 제안",
+  "message": "최근 2주간 진도율과 응답 속도가 떨어져 상담을 권장합니다.",
+  "resourceUrls": [
+    "https://example.com/review-note"
+  ]
+}
+```
 
 ## Notifications APIs
 
