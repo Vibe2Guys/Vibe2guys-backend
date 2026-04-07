@@ -43,6 +43,7 @@ public class AttendanceService {
     public AttendanceResponse startAttendance(Long contentId, Long userId, AttendanceStartRequest request) {
         User user = validateStudent(userId);
         Content content = getAccessibleLiveContent(contentId, userId);
+        validateAttendanceStart(content, request);
 
         AttendanceSummary summary = attendanceSummaryRepository.findByContentIdAndStudentId(contentId, userId)
                 .orElseGet(() -> AttendanceSummary.builder()
@@ -68,6 +69,7 @@ public class AttendanceService {
         AttendanceSummary summary = attendanceSummaryRepository.findByContentIdAndStudentId(contentId, userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ATTENDANCE_NOT_FOUND, "출석 시작 기록이 없습니다."));
 
+        validateAttendanceEnd(summary, request);
         summary.finish(request.leftAt());
         saveAttendanceEvent(user, content, LearningEventType.ATTENDANCE_LEAVE, Map.of("leftAt", request.leftAt().toString()), request.leftAt());
         return AttendanceResponse.finished(summary);
@@ -110,5 +112,20 @@ public class AttendanceService {
                 .payloadJson(orderedPayload)
                 .schemaVersion(1)
                 .build());
+    }
+
+    private void validateAttendanceStart(Content content, AttendanceStartRequest request) {
+        if (content.getScheduledAt() != null && request.enteredAt().isBefore(content.getScheduledAt().minusHours(1))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "허용된 출석 시작 시간보다 너무 이릅니다.");
+        }
+    }
+
+    private void validateAttendanceEnd(AttendanceSummary summary, AttendanceEndRequest request) {
+        if (summary.getLastLeftAt() != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 종료된 출석 기록입니다.");
+        }
+        if (request.leftAt().isBefore(summary.getFirstEnteredAt())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "퇴장 시간은 입장 시간보다 빠를 수 없습니다.");
+        }
     }
 }

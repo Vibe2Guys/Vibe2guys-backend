@@ -9,6 +9,7 @@ import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.learning.domain.ContentProgressSummary;
 import com.vibe2guys.backend.learning.domain.LearningEvent;
 import com.vibe2guys.backend.learning.domain.LearningEventType;
+import com.vibe2guys.backend.learning.dto.ContentProgressEventType;
 import com.vibe2guys.backend.learning.dto.ContentProgressRequest;
 import com.vibe2guys.backend.learning.dto.ContentProgressResponse;
 import com.vibe2guys.backend.learning.repository.ContentProgressSummaryRepository;
@@ -43,33 +44,38 @@ public class ContentProgressService {
         }
 
         Content content = getAccessibleContent(contentId, userId);
+        validateProgressRequest(content, request);
+
+        int totalSeconds = content.getDurationSeconds() != null ? content.getDurationSeconds() : request.totalSeconds();
+        int progressRate = calculateProgressRate(request.watchedSeconds(), totalSeconds);
+        boolean completed = progressRate >= 100;
+
         ContentProgressSummary summary = contentProgressSummaryRepository.findByContentIdAndStudentId(contentId, userId)
                 .orElseGet(() -> ContentProgressSummary.builder()
                         .course(content.getCourse())
                         .content(content)
                         .student(user)
                         .watchedSeconds(0)
-                        .totalSeconds(request.totalSeconds())
+                        .totalSeconds(totalSeconds)
                         .progressRate(0)
                         .lastPositionSeconds(0)
                         .replayCount(0)
                         .completed(false)
                         .build());
 
-        boolean completed = request.progressRate() >= 100;
         summary.updateProgress(
                 request.watchedSeconds(),
-                request.totalSeconds(),
-                request.progressRate(),
+                totalSeconds,
+                progressRate,
                 request.lastPositionSeconds(),
                 request.replayCount(),
                 completed,
-                request.eventType()
+                request.eventType().name()
         );
         contentProgressSummaryRepository.save(summary);
 
         learningEventRepository.save(LearningEvent.builder()
-                .eventType(resolveEventType(request.eventType()))
+                .eventType(resolveEventType(request.eventType().name()))
                 .actor(user)
                 .course(content.getCourse())
                 .week(content.getWeek())
@@ -105,24 +111,53 @@ public class ContentProgressService {
     }
 
     private LearningEventType resolveEventType(String eventType) {
-        return switch (eventType.toUpperCase()) {
-            case "PAUSE" -> LearningEventType.PLAYBACK_PAUSE;
-            case "SEEK" -> LearningEventType.PLAYBACK_SEEK;
-            case "ENDED", "COMPLETE", "COMPLETED" -> LearningEventType.PLAYBACK_COMPLETE;
-            default -> LearningEventType.CONTENT_PROGRESS;
+        return switch (ContentProgressEventType.valueOf(eventType.toUpperCase())) {
+            case PAUSE -> LearningEventType.PLAYBACK_PAUSE;
+            case SEEK -> LearningEventType.PLAYBACK_SEEK;
+            case ENDED -> LearningEventType.PLAYBACK_COMPLETE;
+            case PROGRESS -> LearningEventType.CONTENT_PROGRESS;
         };
+    }
+
+    private void validateProgressRequest(Content content, ContentProgressRequest request) {
+        int effectiveTotalSeconds = content.getDurationSeconds() != null ? content.getDurationSeconds() : request.totalSeconds();
+        if (request.totalSeconds() != effectiveTotalSeconds) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "콘텐츠 길이 정보가 올바르지 않습니다.");
+        }
+        if (request.watchedSeconds() > effectiveTotalSeconds) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "watchedSeconds는 전체 길이를 초과할 수 없습니다.");
+        }
+        if (request.lastPositionSeconds() > effectiveTotalSeconds) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "lastPositionSeconds는 전체 길이를 초과할 수 없습니다.");
+        }
+        if (request.stoppedSegmentStart() != null && request.stoppedSegmentStart() < 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "stoppedSegmentStart는 0 이상이어야 합니다.");
+        }
+        if (request.stoppedSegmentEnd() != null && request.stoppedSegmentEnd() < 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "stoppedSegmentEnd는 0 이상이어야 합니다.");
+        }
+        if (request.stoppedSegmentStart() != null && request.stoppedSegmentEnd() != null
+                && request.stoppedSegmentStart() > request.stoppedSegmentEnd()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "재생 구간 시작은 종료보다 클 수 없습니다.");
+        }
+    }
+
+    private int calculateProgressRate(int watchedSeconds, int totalSeconds) {
+        if (totalSeconds <= 0) {
+            return 0;
+        }
+        return Math.min(100, (int) Math.floor((watchedSeconds * 100.0) / totalSeconds));
     }
 
     private Map<String, Object> buildPayload(ContentProgressRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("watchedSeconds", request.watchedSeconds());
         payload.put("totalSeconds", request.totalSeconds());
-        payload.put("progressRate", request.progressRate());
         payload.put("lastPositionSeconds", request.lastPositionSeconds());
         payload.put("replayCount", request.replayCount());
         payload.put("stoppedSegmentStart", request.stoppedSegmentStart());
         payload.put("stoppedSegmentEnd", request.stoppedSegmentEnd());
-        payload.put("eventType", request.eventType());
+        payload.put("eventType", request.eventType().name());
         return payload;
     }
 }
