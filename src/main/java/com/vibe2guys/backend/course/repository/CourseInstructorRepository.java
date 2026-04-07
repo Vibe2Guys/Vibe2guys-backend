@@ -7,4 +7,6 @@ import java.util.List;
 
 public interface CourseInstructorRepository extends JpaRepository<CourseInstructor, Long> {
     List<CourseInstructor> findByInstructorId(Long instructorId);
+
+    List<CourseInstructor> findByCourseId(Long courseId);
 }

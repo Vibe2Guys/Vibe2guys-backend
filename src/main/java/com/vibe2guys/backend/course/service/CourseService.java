@@ -3,14 +3,29 @@ package com.vibe2guys.backend.course.service;
 import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
 import com.vibe2guys.backend.course.domain.Course;
+import com.vibe2guys.backend.course.domain.Content;
+import com.vibe2guys.backend.course.domain.CourseStatus;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
 import com.vibe2guys.backend.course.domain.CourseInstructor;
+import com.vibe2guys.backend.course.domain.CourseWeek;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
+import com.vibe2guys.backend.course.dto.ContentDetailResponse;
+import com.vibe2guys.backend.course.dto.CourseDetailResponse;
+import com.vibe2guys.backend.course.dto.CourseInstructorSummaryResponse;
+import com.vibe2guys.backend.course.dto.CourseWeekSummaryResponse;
+import com.vibe2guys.backend.course.dto.CreateContentRequest;
+import com.vibe2guys.backend.course.dto.CreateContentResponse;
+import com.vibe2guys.backend.course.dto.CreateCourseRequest;
+import com.vibe2guys.backend.course.dto.CreateCourseResponse;
+import com.vibe2guys.backend.course.dto.CreateWeekRequest;
+import com.vibe2guys.backend.course.dto.CreateWeekResponse;
 import com.vibe2guys.backend.course.dto.EnrollmentResponse;
 import com.vibe2guys.backend.course.dto.MyCourseItemResponse;
+import com.vibe2guys.backend.course.repository.ContentRepository;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
 import com.vibe2guys.backend.course.repository.CourseRepository;
+import com.vibe2guys.backend.course.repository.CourseWeekRepository;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -30,6 +45,8 @@ public class CourseService {
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
+    private final CourseWeekRepository courseWeekRepository;
+    private final ContentRepository contentRepository;
     private final UserService userService;
 
     public List<MyCourseItemResponse> getMyCourses(Long userId) {
@@ -62,6 +79,96 @@ public class CourseService {
                 .build());
 
         return new EnrollmentResponse(enrollment.getCourse().getId(), enrollment.getStudent().getId(), enrollment.getStatus().name());
+    }
+
+    @Transactional
+    public CreateCourseResponse createCourse(Long userId, CreateCourseRequest request) {
+        User user = userService.getById(userId);
+        if (user.getRole() != UserRole.INSTRUCTOR && user.getRole() != UserRole.ADMIN) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "교수자 또는 관리자만 강의를 생성할 수 있습니다.");
+        }
+        if (request.endDate().isBefore(request.startDate())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "종료일은 시작일보다 빠를 수 없습니다.");
+        }
+
+        Course course = courseRepository.save(Course.builder()
+                .title(request.title())
+                .description(request.description())
+                .thumbnailUrl(request.thumbnailUrl())
+                .startDate(request.startDate())
+                .endDate(request.endDate())
+                .sequentialRelease(request.isSequentialRelease())
+                .status(CourseStatus.DRAFT)
+                .createdBy(user)
+                .build());
+
+        if (user.getRole() == UserRole.INSTRUCTOR) {
+            courseInstructorRepository.save(CourseInstructor.builder()
+                    .course(course)
+                    .instructor(user)
+                    .build());
+        }
+
+        return CreateCourseResponse.from(course);
+    }
+
+    public CourseDetailResponse getCourseDetail(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        Course course = getAccessibleCourse(courseId, user);
+        List<CourseWeekSummaryResponse> weeks = courseWeekRepository.findByCourseIdOrderByWeekNumberAsc(courseId).stream()
+                .map(CourseWeekSummaryResponse::from)
+                .toList();
+        CourseInstructorSummaryResponse instructor = courseInstructorRepository.findByCourseId(courseId).stream()
+                .findFirst()
+                .map(item -> CourseInstructorSummaryResponse.from(item.getInstructor()))
+                .orElse(CourseInstructorSummaryResponse.from(course.getCreatedBy()));
+        return CourseDetailResponse.of(course, instructor, weeks);
+    }
+
+    @Transactional
+    public CreateWeekResponse createWeek(Long courseId, Long userId, CreateWeekRequest request) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+
+        CourseWeek week = courseWeekRepository.save(CourseWeek.builder()
+                .course(course)
+                .weekNumber(request.weekNumber())
+                .title(request.title())
+                .openAt(request.openAt())
+                .build());
+        return CreateWeekResponse.from(week);
+    }
+
+    @Transactional
+    public CreateContentResponse createContent(Long weekId, Long userId, CreateContentRequest request) {
+        User user = userService.getById(userId);
+        CourseWeek week = courseWeekRepository.findById(weekId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.WEEK_NOT_FOUND, "주차를 찾을 수 없습니다."));
+        getManageableCourse(week.getCourse().getId(), user);
+
+        validateCreateContentRequest(request);
+        Content content = contentRepository.save(Content.builder()
+                .course(week.getCourse())
+                .week(week)
+                .type(request.type())
+                .title(request.title())
+                .description(request.description())
+                .videoUrl(request.videoUrl())
+                .documentUrl(request.documentUrl())
+                .durationSeconds(request.durationSeconds())
+                .scheduledAt(request.scheduledAt())
+                .openAt(request.openAt())
+                .published(true)
+                .build());
+        return CreateContentResponse.from(content);
+    }
+
+    public ContentDetailResponse getContentDetail(Long contentId, Long userId) {
+        User user = userService.getById(userId);
+        Content content = contentRepository.findById(contentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND, "콘텐츠를 찾을 수 없습니다."));
+        getAccessibleCourse(content.getCourse().getId(), user);
+        return ContentDetailResponse.from(content);
     }
 
     private List<MyCourseItemResponse> mapStudentCourses(List<CourseEnrollment> enrollments) {
@@ -98,5 +205,60 @@ public class CourseService {
             ));
         }
         return responses;
+    }
+
+    private Course getAccessibleCourse(Long courseId, User user) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "강의를 찾을 수 없습니다."));
+
+        if (user.getRole() == UserRole.ADMIN) {
+            return course;
+        }
+        if (user.getRole() == UserRole.INSTRUCTOR) {
+            courseInstructorRepository.findByInstructorId(user.getId()).stream()
+                    .filter(item -> item.getCourse().getId().equals(courseId))
+                    .findFirst()
+                    .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다."));
+            return course;
+        }
+
+        CourseEnrollment enrollment = courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, user.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 강의만 접근할 수 있습니다."));
+        if (enrollment.getStatus() != EnrollmentStatus.ENROLLED) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "활성 수강 상태가 아닙니다.");
+        }
+        return course;
+    }
+
+    private Course getManageableCourse(Long courseId, User user) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "강의를 찾을 수 없습니다."));
+        if (user.getRole() == UserRole.ADMIN) {
+            return course;
+        }
+        if (user.getRole() != UserRole.INSTRUCTOR) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "강의 관리 권한이 없습니다.");
+        }
+        courseInstructorRepository.findByInstructorId(user.getId()).stream()
+                .filter(item -> item.getCourse().getId().equals(courseId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다."));
+        return course;
+    }
+
+    private void validateCreateContentRequest(CreateContentRequest request) {
+        if (request.type() == com.vibe2guys.backend.course.domain.ContentType.VOD) {
+            if (request.videoUrl() == null || request.videoUrl().isBlank() || request.durationSeconds() == null || request.durationSeconds() <= 0) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "VOD 콘텐츠는 videoUrl과 durationSeconds가 필요합니다.");
+            }
+        }
+        if (request.type() == com.vibe2guys.backend.course.domain.ContentType.DOCUMENT) {
+            if (request.documentUrl() == null || request.documentUrl().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "DOCUMENT 콘텐츠는 documentUrl이 필요합니다.");
+            }
+        }
+        if (request.type() == com.vibe2guys.backend.course.domain.ContentType.LIVE && request.scheduledAt() == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "LIVE 콘텐츠는 scheduledAt이 필요합니다.");
+        }
     }
 }
