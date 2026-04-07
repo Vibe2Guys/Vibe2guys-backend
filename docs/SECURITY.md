@@ -37,6 +37,45 @@ This document defines the MVP security baseline for the backend.
 - input validation is mandatory on every write request
 - standardized error responses must not leak internal implementation details
 
+## Secure Coding Rules
+
+### SQL Injection
+
+- use JPA repositories, parameter binding, or prepared statements by default
+- never concatenate raw user input into SQL, JPQL, or native query strings
+- if native queries are required, use bound parameters only
+- search, sort, and filter inputs must be allow-listed before being mapped to query logic
+
+### Input Handling
+
+- validate all request DTOs with Bean Validation
+- enforce size limits on text inputs to reduce abuse and unexpected load
+- reject malformed enum, pagination, sort, and identifier inputs early
+
+### XSS and Unsafe Content
+
+- backend should treat learner text, chat text, and AI output as untrusted input
+- do not store or return executable HTML as a trusted field
+- if rich text is introduced later, sanitization rules must be defined explicitly
+
+### Secrets and Sensitive Data
+
+- never hardcode production secrets in source code
+- JWT secrets, DB credentials, and API keys must come from environment or secret storage
+- do not log access tokens, refresh tokens, passwords, or raw authorization headers
+
+### Error and Log Safety
+
+- do not expose stack traces, SQL text, or ORM internals in API responses
+- security-relevant logs should record actor, target, and result without leaking secrets
+- authentication failure logs should be useful for auditing but not reveal whether a password or token value was correct
+
+### Abuse and Brute Force
+
+- repeated failed login attempts should be rate-limited or monitored
+- token refresh abuse should be auditable and revocable
+- endpoints that accept high-frequency writes, such as progress or chat events, should be reviewed for abuse controls
+
 ## Data Protection
 
 - minimize collection of personal data
@@ -64,3 +103,4 @@ At minimum, preserve audit visibility for:
 - email verification
 - institution SSO
 - encryption-at-rest policy details
+- formal rate limiting policy

@@ -124,3 +124,6 @@ Coordination rules:
 - Instructor-facing risk scores must include evidence.
 - Background jobs must be idempotent where possible.
 - Logs must support debugging of learning-event ingestion and analytics calculations.
+- Query and persistence code must avoid SQL injection by using parameterized access patterns only.
+- Secrets and tokens must not be logged or hardcoded beyond local development defaults.
+- User-generated text and AI-generated text must be treated as untrusted content.

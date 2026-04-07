@@ -1,0 +1,113 @@
+package com.vibe2guys.backend.auth.service;
+
+import com.vibe2guys.backend.auth.domain.RefreshToken;
+import com.vibe2guys.backend.auth.dto.AuthUserResponse;
+import com.vibe2guys.backend.auth.dto.LoginRequest;
+import com.vibe2guys.backend.auth.dto.LoginResponse;
+import com.vibe2guys.backend.auth.dto.RegisterRequest;
+import com.vibe2guys.backend.auth.dto.RegisterResponse;
+import com.vibe2guys.backend.auth.dto.TokenRefreshRequest;
+import com.vibe2guys.backend.auth.dto.TokenRefreshResponse;
+import com.vibe2guys.backend.auth.repository.RefreshTokenRepository;
+import com.vibe2guys.backend.common.exception.BusinessException;
+import com.vibe2guys.backend.common.exception.ErrorCode;
+import com.vibe2guys.backend.common.security.CustomUserDetailsService;
+import com.vibe2guys.backend.common.security.JwtProperties;
+import com.vibe2guys.backend.common.security.JwtTokenProvider;
+import com.vibe2guys.backend.common.security.UserPrincipal;
+import com.vibe2guys.backend.user.domain.User;
+import com.vibe2guys.backend.user.domain.UserRole;
+import com.vibe2guys.backend.user.domain.UserStatus;
+import com.vibe2guys.backend.user.repository.UserRepository;
+import jakarta.servlet.http.HttpServletRequest;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.authentication.AuthenticationManager;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.OffsetDateTime;
+
+@Service
+@RequiredArgsConstructor
+@Transactional(readOnly = true)
+public class AuthService {
+
+    private final UserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final AuthenticationManager authenticationManager;
+    private final JwtTokenProvider jwtTokenProvider;
+    private final CustomUserDetailsService customUserDetailsService;
+    private final JwtProperties jwtProperties;
+
+    @Transactional
+    public RegisterResponse register(RegisterRequest request) {
+        if (userRepository.existsByEmail(request.email())) {
+            throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS, "이미 사용 중인 이메일입니다.");
+        }
+        if (request.role() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "MVP에서는 학생만 직접 회원가입할 수 있습니다.");
+        }
+        User user = userRepository.save(User.builder()
+                .email(request.email())
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .name(request.name())
+                .role(request.role())
+                .status(UserStatus.ACTIVE)
+                .build());
+        return RegisterResponse.from(user);
+    }
+
+    @Transactional
+    public LoginResponse login(LoginRequest request, HttpServletRequest httpServletRequest) {
+        authenticationManager.authenticate(
+                new UsernamePasswordAuthenticationToken(request.email(), request.password())
+        );
+
+        UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(request.email());
+        String accessToken = jwtTokenProvider.createAccessToken(principal);
+        String refreshTokenValue = jwtTokenProvider.createRefreshToken(principal);
+        User user = userRepository.findById(principal.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "사용자를 찾을 수 없습니다."));
+
+        refreshTokenRepository.save(RefreshToken.builder()
+                .user(user)
+                .token(refreshTokenValue)
+                .deviceName(httpServletRequest.getHeader("User-Agent"))
+                .ipAddress(httpServletRequest.getRemoteAddr())
+                .expiresAt(OffsetDateTime.now().plusSeconds(jwtProperties.refreshTokenExpirationSeconds()))
+                .build());
+
+        return new LoginResponse(accessToken, refreshTokenValue, AuthUserResponse.from(user));
+    }
+
+    @Transactional
+    public TokenRefreshResponse refresh(TokenRefreshRequest request) {
+        jwtTokenProvider.validateToken(request.refreshToken());
+
+        RefreshToken refreshToken = refreshTokenRepository.findByToken(request.refreshToken())
+                .orElseThrow(() -> new BusinessException(ErrorCode.TOKEN_INVALID, "refresh token을 찾을 수 없습니다."));
+
+        OffsetDateTime now = OffsetDateTime.now();
+        if (refreshToken.isRevoked() || refreshToken.isExpired(now)) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID, "사용할 수 없는 refresh token입니다.");
+        }
+
+        UserPrincipal principal = customUserDetailsService.loadUserById(refreshToken.getUser().getId());
+        String newAccessToken = jwtTokenProvider.createAccessToken(principal);
+        String newRefreshToken = jwtTokenProvider.createRefreshToken(principal);
+
+        refreshToken.revoke(now);
+        refreshTokenRepository.save(RefreshToken.builder()
+                .user(refreshToken.getUser())
+                .token(newRefreshToken)
+                .deviceName(refreshToken.getDeviceName())
+                .ipAddress(refreshToken.getIpAddress())
+                .expiresAt(now.plusSeconds(jwtProperties.refreshTokenExpirationSeconds()))
+                .build());
+
+        return new TokenRefreshResponse(newAccessToken, newRefreshToken);
+    }
+}
