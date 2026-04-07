@@ -30,6 +30,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.time.temporal.ChronoUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +45,7 @@ public class AuthService {
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtProperties jwtProperties;
     private final RefreshTokenHasher refreshTokenHasher;
+    private final LoginThrottleService loginThrottleService;
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
@@ -65,13 +67,24 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest httpServletRequest) {
+        String normalizedEmail = request.email().trim().toLowerCase();
+        String clientIp = resolveClientIp(httpServletRequest);
+        OffsetDateTime blockedUntil = loginThrottleService.checkAllowed(normalizedEmail, clientIp);
+        if (blockedUntil != null) {
+            throw buildRateLimitedException(blockedUntil);
+        }
         try {
             authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(request.email(), request.password())
             );
         } catch (AuthenticationException ex) {
+            OffsetDateTime newBlockedUntil = loginThrottleService.recordFailure(normalizedEmail, clientIp);
+            if (newBlockedUntil != null && newBlockedUntil.isAfter(OffsetDateTime.now())) {
+                throw buildRateLimitedException(newBlockedUntil);
+            }
             throw new BusinessException(ErrorCode.INVALID_CREDENTIALS, "이메일 또는 비밀번호가 올바르지 않습니다.");
         }
+        loginThrottleService.recordSuccess(normalizedEmail, clientIp);
 
         UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(request.email());
         String accessToken = jwtTokenProvider.createAccessToken(principal);
@@ -119,5 +132,21 @@ public class AuthService {
                 .build());
 
         return new TokenRefreshResponse(newAccessToken, newRefreshToken);
+    }
+
+    private String resolveClientIp(HttpServletRequest request) {
+        String forwardedFor = request.getHeader("X-Forwarded-For");
+        if (forwardedFor != null && !forwardedFor.isBlank()) {
+            return forwardedFor.split(",")[0].trim();
+        }
+        return request.getRemoteAddr();
+    }
+
+    private BusinessException buildRateLimitedException(OffsetDateTime blockedUntil) {
+        long retryAfterSeconds = Math.max(1, ChronoUnit.SECONDS.between(OffsetDateTime.now(), blockedUntil));
+        return new BusinessException(
+                ErrorCode.LOGIN_RATE_LIMITED,
+                "로그인 시도가 너무 많습니다. " + retryAfterSeconds + "초 후 다시 시도하세요."
+        );
     }
 }

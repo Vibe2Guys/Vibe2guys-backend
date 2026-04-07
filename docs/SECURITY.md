@@ -73,9 +73,13 @@ This document defines the MVP security baseline for the backend.
 
 ### Abuse and Brute Force
 
-- repeated failed login attempts should be rate-limited or monitored
+- repeated failed login attempts must be throttled
 - token refresh abuse should be auditable and revocable
 - endpoints that accept high-frequency writes, such as progress or chat events, should be reviewed for abuse controls
+
+Current MVP rule:
+
+- login is blocked for a cooldown window after repeated failures from the same email or client IP
 
 ## Data Protection
 
@@ -104,4 +108,4 @@ At minimum, preserve audit visibility for:
 - email verification
 - institution SSO
 - encryption-at-rest policy details
-- formal rate limiting policy
+- rate limiting for high-frequency learning and chat events

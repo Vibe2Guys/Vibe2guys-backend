@@ -1,6 +1,7 @@
 package com.vibe2guys.backend.common.security;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.vibe2guys.backend.auth.service.LoginThrottleProperties;
 import com.vibe2guys.backend.common.exception.ErrorCode;
 import com.vibe2guys.backend.common.exception.ErrorResponse;
 import lombok.RequiredArgsConstructor;
@@ -26,7 +27,7 @@ import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties(JwtProperties.class)
+@EnableConfigurationProperties({JwtProperties.class, LoginThrottleProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 

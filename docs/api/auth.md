@@ -77,6 +77,8 @@ Request:
 }
 ```
 
+실패가 짧은 시간 안에 반복되면 `429 LOGIN_RATE_LIMITED`를 반환할 수 있다.
+
 ## `POST /api/v1/auth/refresh`
 
 refresh token으로 access token을 재발급한다.
@@ -172,3 +174,4 @@ Response:
 - Spring Security + JWT 기준으로 구현한다.
 - Flutter 앱에서 토큰 재사용이 쉬워야 하므로 응답 구조를 단순하게 유지한다.
 - Refresh token은 MVP 범위에 포함하며 DB 저장과 회전을 지원한다.
+- 로그인 실패가 반복되면 이메일과 클라이언트 IP 기준으로 일시 차단한다.
