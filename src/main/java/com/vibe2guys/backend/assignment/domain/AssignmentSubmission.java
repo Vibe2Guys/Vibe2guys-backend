@@ -69,4 +69,10 @@ public class AssignmentSubmission extends BaseTimeEntity {
         this.status = status;
         this.submittedAt = submittedAt;
     }
+
+    public void resubmit(String answerText, AssignmentSubmissionStatus status, OffsetDateTime submittedAt) {
+        this.answerText = answerText;
+        this.status = status;
+        this.submittedAt = submittedAt;
+    }
 }

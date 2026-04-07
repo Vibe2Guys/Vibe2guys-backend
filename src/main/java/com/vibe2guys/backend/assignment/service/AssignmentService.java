@@ -6,19 +6,24 @@ import com.vibe2guys.backend.assignment.domain.AssignmentSubmissionFile;
 import com.vibe2guys.backend.assignment.domain.AssignmentSubmissionStatus;
 import com.vibe2guys.backend.assignment.dto.AssignmentDetailResponse;
 import com.vibe2guys.backend.assignment.dto.AssignmentListItemResponse;
+import com.vibe2guys.backend.assignment.dto.AssignmentSubmissionListItemResponse;
 import com.vibe2guys.backend.assignment.dto.AssignmentSubmissionResponse;
 import com.vibe2guys.backend.assignment.dto.AssignmentSubmissionSummaryResponse;
+import com.vibe2guys.backend.assignment.dto.CreateAssignmentRequest;
+import com.vibe2guys.backend.assignment.dto.CreateAssignmentResponse;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentSubmissionRequest;
 import com.vibe2guys.backend.assignment.repository.AssignmentRepository;
 import com.vibe2guys.backend.assignment.repository.AssignmentSubmissionFileRepository;
 import com.vibe2guys.backend.assignment.repository.AssignmentSubmissionRepository;
 import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
+import com.vibe2guys.backend.course.domain.Course;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
 import com.vibe2guys.backend.course.domain.CourseInstructor;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
+import com.vibe2guys.backend.course.repository.CourseRepository;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -41,7 +46,28 @@ public class AssignmentService {
     private final AssignmentSubmissionFileRepository assignmentSubmissionFileRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
+    private final CourseRepository courseRepository;
     private final UserService userService;
+
+    @Transactional
+    public CreateAssignmentResponse createAssignment(Long courseId, Long userId, CreateAssignmentRequest request) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        if (request.dueAt().isBefore(OffsetDateTime.now().minusYears(1))) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "마감 기한이 올바르지 않습니다.");
+        }
+
+        Assignment assignment = assignmentRepository.save(Assignment.builder()
+                .course(course)
+                .title(request.title().trim())
+                .description(request.description().trim())
+                .type(request.type())
+                .teamAssignment(request.teamAssignment())
+                .dueAt(request.dueAt())
+                .createdBy(user)
+                .build());
+        return CreateAssignmentResponse.from(assignment);
+    }
 
     public List<AssignmentListItemResponse> getAssignments(Long courseId, Long userId) {
         User user = userService.getById(userId);
@@ -106,6 +132,47 @@ public class AssignmentService {
         return AssignmentSubmissionResponse.from(submission);
     }
 
+    @Transactional
+    public AssignmentSubmissionResponse resubmitAssignment(
+            Long assignmentId,
+            Long submissionId,
+            Long userId,
+            CreateAssignmentSubmissionRequest request
+    ) {
+        User user = userService.getById(userId);
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 과제를 재제출할 수 있습니다.");
+        }
+
+        Assignment assignment = getAccessibleAssignment(assignmentId, user);
+        if (assignment.isTeamAssignment()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "팀 과제 재제출은 아직 지원하지 않습니다.");
+        }
+
+        AssignmentSubmission submission = assignmentSubmissionRepository.findByIdAndAssignmentId(submissionId, assignmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ASSIGNMENT_NOT_FOUND, "과제 제출을 찾을 수 없습니다."));
+        if (!submission.getStudent().getId().equals(userId)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "본인 제출물만 재제출할 수 있습니다.");
+        }
+
+        OffsetDateTime submittedAt = OffsetDateTime.now();
+        AssignmentSubmissionStatus status = submittedAt.isAfter(assignment.getDueAt())
+                ? AssignmentSubmissionStatus.LATE
+                : AssignmentSubmissionStatus.RESUBMITTED;
+        submission.resubmit(request.answerText(), status, submittedAt);
+        replaceFiles(submission, request.fileUrls());
+        return AssignmentSubmissionResponse.from(submission);
+    }
+
+    public List<AssignmentSubmissionListItemResponse> getSubmissions(Long assignmentId, Long userId) {
+        User user = userService.getById(userId);
+        Assignment assignment = getAccessibleAssignment(assignmentId, user);
+        getManageableCourse(assignment.getCourse().getId(), user);
+        return assignmentSubmissionRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId).stream()
+                .map(AssignmentSubmissionListItemResponse::from)
+                .toList();
+    }
+
     private Assignment getAccessibleAssignment(Long assignmentId, User user) {
         Assignment assignment = assignmentRepository.findById(assignmentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.ASSIGNMENT_NOT_FOUND, "과제를 찾을 수 없습니다."));
@@ -114,6 +181,9 @@ public class AssignmentService {
     }
 
     private void validateCourseAccess(Long courseId, User user) {
+        if (user.getRole() == UserRole.ADMIN) {
+            return;
+        }
         if (user.getRole() == UserRole.INSTRUCTOR) {
             CourseInstructor instructor = courseInstructorRepository.findByInstructorId(user.getId()).stream()
                     .filter(item -> item.getCourse().getId().equals(courseId))
@@ -129,6 +199,33 @@ public class AssignmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 강의만 접근할 수 있습니다."));
         if (enrollment.getStatus() != EnrollmentStatus.ENROLLED) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "활성 수강 상태가 아닙니다.");
+        }
+    }
+
+    private Course getManageableCourse(Long courseId, User user) {
+        Course course = courseRepository.findById(courseId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "강의를 찾을 수 없습니다."));
+        if (user.getRole() == UserRole.ADMIN) {
+            return course;
+        }
+        if (user.getRole() != UserRole.INSTRUCTOR) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "강의 관리 권한이 없습니다.");
+        }
+        courseInstructorRepository.findByInstructorId(user.getId()).stream()
+                .filter(item -> item.getCourse().getId().equals(courseId))
+                .findFirst()
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다."));
+        return course;
+    }
+
+    private void replaceFiles(AssignmentSubmission submission, List<String> fileUrls) {
+        assignmentSubmissionFileRepository.deleteBySubmissionId(submission.getId());
+        List<String> sanitizedFileUrls = fileUrls == null ? Collections.emptyList() : fileUrls;
+        for (String fileUrl : sanitizedFileUrls) {
+            assignmentSubmissionFileRepository.save(AssignmentSubmissionFile.builder()
+                    .submission(submission)
+                    .fileUrl(fileUrl)
+                    .build());
         }
     }
 }
