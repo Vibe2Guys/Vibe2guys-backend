@@ -23,6 +23,7 @@ import com.vibe2guys.backend.course.repository.ContentRepository;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
 import com.vibe2guys.backend.course.repository.CourseRepository;
+import com.vibe2guys.backend.notification.service.NotificationService;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -47,6 +48,7 @@ public class AiService {
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
     private final UserService userService;
+    private final NotificationService notificationService;
 
     @Transactional
     public FollowUpQuestionResponse createFollowUpQuestion(Long requesterId, CreateFollowUpQuestionRequest request) {
@@ -72,6 +74,7 @@ public class AiService {
                 .questionText(questionText)
                 .difficultyLevel(difficultyLevel)
                 .build());
+        notificationService.notifyFollowUpQuestion(student, questionText);
         return FollowUpQuestionResponse.from(question);
     }
 

@@ -81,6 +81,12 @@ Response:
 - `GET /api/v1/notifications/me`
 - `PATCH /api/v1/notifications/{notificationId}/read`
 
+알림은 MVP에서 아래 이벤트를 우선 지원한다:
+
+- 새 콘텐츠 공개 또는 등록
+- 새 과제 등록
+- AI 꼬리질문 도착
+
 ## Backend Notes
 
 - 규칙 기반 계산 결과를 우선 제공하고 AI 요약은 보조 필드로 붙인다.

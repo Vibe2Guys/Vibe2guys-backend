@@ -37,6 +37,7 @@ import com.vibe2guys.backend.learning.domain.AttendanceSummary;
 import com.vibe2guys.backend.learning.domain.ContentProgressSummary;
 import com.vibe2guys.backend.learning.repository.AttendanceSummaryRepository;
 import com.vibe2guys.backend.learning.repository.ContentProgressSummaryRepository;
+import com.vibe2guys.backend.notification.service.NotificationService;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -66,6 +67,7 @@ public class CourseService {
     private final ContentProgressSummaryRepository contentProgressSummaryRepository;
     private final AttendanceSummaryRepository attendanceSummaryRepository;
     private final UserService userService;
+    private final NotificationService notificationService;
 
     public List<MyCourseItemResponse> getMyCourses(Long userId) {
         User user = userService.getById(userId);
@@ -229,6 +231,7 @@ public class CourseService {
                 .openAt(request.openAt())
                 .published(true)
                 .build());
+        notificationService.notifyNewContent(content);
         return CreateContentResponse.from(content);
     }
 

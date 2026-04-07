@@ -24,6 +24,7 @@ import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
 import com.vibe2guys.backend.course.repository.CourseRepository;
+import com.vibe2guys.backend.notification.service.NotificationService;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -48,6 +49,7 @@ public class AssignmentService {
     private final CourseInstructorRepository courseInstructorRepository;
     private final CourseRepository courseRepository;
     private final UserService userService;
+    private final NotificationService notificationService;
 
     @Transactional
     public CreateAssignmentResponse createAssignment(Long courseId, Long userId, CreateAssignmentRequest request) {
@@ -66,6 +68,7 @@ public class AssignmentService {
                 .dueAt(request.dueAt())
                 .createdBy(user)
                 .build());
+        notificationService.notifyAssignmentCreated(courseId, assignment.getTitle());
         return CreateAssignmentResponse.from(assignment);
     }
 
