@@ -92,6 +92,19 @@ Request:
 }
 ```
 
+Response:
+
+```json
+{
+  "success": true,
+  "message": "토큰 재발급 성공",
+  "data": {
+    "accessToken": "new-jwt-token",
+    "refreshToken": "rotated-refresh-token"
+  }
+}
+```
+
 ## `POST /api/v1/auth/logout`
 
 현재 사용자의 refresh token 세션을 종료한다.
@@ -122,22 +135,10 @@ Response:
 ```json
 {
   "success": true,
-  "message": "토큰 재발급 성공",
-  "data": {
-    "accessToken": "new-jwt-token",
-    "refreshToken": "rotated-refresh-token"
-  }
-}
-```
-
-Response:
-
-```json
-{
-  "success": true,
   "message": "로그인 성공",
   "data": {
     "accessToken": "jwt-token",
+    "refreshToken": "refresh-token",
     "user": {
       "userId": 1,
       "name": "홍길동",

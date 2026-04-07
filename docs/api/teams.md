@@ -62,9 +62,11 @@ MVP에서는 REST 기반 저장으로 시작할 수 있고, 이후 WebSocket 전
 
 ## Instructor Intervention APIs
 
-- `POST /api/v1/instructors/students/{studentId}/counseling-requests`
-- `POST /api/v1/instructors/students/{studentId}/supplement-materials`
-- `POST /api/v1/instructors/students/{studentId}/extra-assignments`
+- `GET /api/v1/instructors/courses/{courseId}/interventions`
+- `POST /api/v1/instructors/courses/{courseId}/interventions`
+
+교수자 개입은 팀 모듈 전용 엔드포인트로 분리하지 않고, 코스 기준 개입 기록 API로 통합한다.
+개입 타입은 `COUNSELING`, `SUPPLEMENT_MATERIAL`, `EXTRA_ASSIGNMENT`를 사용한다.
 
 ## Backend Notes
 
