@@ -11,12 +11,14 @@
 - `auth`
 - `learning`
 - `analytics`
+- `admin`
 
 Grouped documents are exposed at:
 
 - `/v3/api-docs/auth`
 - `/v3/api-docs/learning`
 - `/v3/api-docs/analytics`
+- `/v3/api-docs/admin`
 
 ## Security
 

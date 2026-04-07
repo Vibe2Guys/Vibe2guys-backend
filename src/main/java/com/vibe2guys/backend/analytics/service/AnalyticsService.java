@@ -2,6 +2,8 @@ package com.vibe2guys.backend.analytics.service;
 
 import com.vibe2guys.backend.ai.domain.AiFollowUpAnalysis;
 import com.vibe2guys.backend.ai.repository.AiFollowUpAnalysisRepository;
+import com.vibe2guys.backend.admin.domain.AnalyticsConfig;
+import com.vibe2guys.backend.admin.repository.AnalyticsConfigRepository;
 import com.vibe2guys.backend.analytics.domain.DailyAnalyticsSnapshot;
 import com.vibe2guys.backend.analytics.domain.InstructorIntervention;
 import com.vibe2guys.backend.analytics.domain.RiskLevel;
@@ -73,6 +75,7 @@ public class AnalyticsService {
     private final DailyAnalyticsSnapshotRepository snapshotRepository;
     private final InstructorInterventionRepository instructorInterventionRepository;
     private final AiFollowUpAnalysisRepository aiFollowUpAnalysisRepository;
+    private final AnalyticsConfigRepository analyticsConfigRepository;
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
@@ -427,7 +430,7 @@ public class AnalyticsService {
     }
 
     private DailyAnalyticsSnapshot upsertSnapshot(User student, Course course, LocalDate snapshotDate) {
-        AnalyticsMetrics metrics = calculateMetrics(student, course, snapshotDate);
+        AnalyticsMetrics metrics = calculateMetrics(student, course, snapshotDate, getAnalyticsConfig());
         DailyAnalyticsSnapshot snapshot = snapshotRepository.findByStudentIdAndCourseIdAndSnapshotDate(student.getId(), course.getId(), snapshotDate)
                 .orElseGet(() -> DailyAnalyticsSnapshot.builder()
                         .student(student)
@@ -462,7 +465,7 @@ public class AnalyticsService {
         return snapshotRepository.save(snapshot);
     }
 
-    private AnalyticsMetrics calculateMetrics(User student, Course course, LocalDate snapshotDate) {
+    private AnalyticsMetrics calculateMetrics(User student, Course course, LocalDate snapshotDate, AnalyticsConfig analyticsConfig) {
         List<ContentProgressSummary> progressSummaries = progressSummaryRepository.findByCourseIdAndStudentId(course.getId(), student.getId());
         List<AttendanceSummary> attendanceSummaries = attendanceSummaryRepository.findByCourseIdAndStudentId(course.getId(), student.getId());
         List<Assignment> assignments = assignmentRepository.findByCourseIdOrderByDueAtAsc(course.getId());
@@ -497,8 +500,15 @@ public class AnalyticsService {
         int engagementScore = averageScore(List.of(averageProgressRate, attendanceRate));
         int collaborationScore = 50;
 
-        int riskScore = clamp(100 - averageScore(List.of(diligenceScore, understandingScore, engagementScore)));
-        RiskLevel riskLevel = resolveRiskLevel(riskScore);
+        int weightedHealthScore = clamp((int) Math.round(
+                (attendanceRate * analyticsConfig.getAttendanceWeight())
+                        + (progressCoverage * analyticsConfig.getProgressWeight())
+                        + (assignmentSubmitRate * analyticsConfig.getAssignmentWeight())
+                        + (understandingScore * analyticsConfig.getQuizWeight())
+                        + (collaborationScore * analyticsConfig.getTeamActivityWeight())
+        ));
+        int riskScore = clamp(100 - weightedHealthScore);
+        RiskLevel riskLevel = resolveRiskLevel(riskScore, analyticsConfig);
         List<String> reasons = buildReasons(attendanceRate, assignmentSubmitRate, understandingScore, progressCoverage);
         Map<String, Object> evidenceWindow = new HashMap<>();
         evidenceWindow.put("snapshotDate", snapshotDate.toString());
@@ -523,12 +533,13 @@ public class AnalyticsService {
 
     private DailyAnalyticsSnapshot aggregateSnapshots(List<DailyAnalyticsSnapshot> snapshots) {
         DailyAnalyticsSnapshot base = snapshots.getFirst();
+        AnalyticsConfig analyticsConfig = getAnalyticsConfig();
         int diligenceScore = averageScore(snapshots.stream().map(DailyAnalyticsSnapshot::getDiligenceScore).toList());
         int understandingScore = averageScore(snapshots.stream().map(DailyAnalyticsSnapshot::getUnderstandingScore).toList());
         int engagementScore = averageScore(snapshots.stream().map(DailyAnalyticsSnapshot::getEngagementScore).toList());
         int collaborationScore = averageScore(snapshots.stream().map(DailyAnalyticsSnapshot::getCollaborationScore).toList());
         int riskScore = averageScore(snapshots.stream().map(DailyAnalyticsSnapshot::getDropoutRiskScore).toList());
-        RiskLevel riskLevel = resolveRiskLevel(riskScore);
+        RiskLevel riskLevel = resolveRiskLevel(riskScore, analyticsConfig);
 
         return DailyAnalyticsSnapshot.builder()
                 .student(base.getStudent())
@@ -587,11 +598,11 @@ public class AnalyticsService {
         return recommendations;
     }
 
-    private RiskLevel resolveRiskLevel(int riskScore) {
-        if (riskScore >= 70) {
+    private RiskLevel resolveRiskLevel(int riskScore, AnalyticsConfig analyticsConfig) {
+        if (riskScore >= analyticsConfig.getRiskThresholdHigh()) {
             return RiskLevel.HIGH;
         }
-        if (riskScore >= 40) {
+        if (riskScore >= analyticsConfig.getRiskThresholdMedium()) {
             return RiskLevel.MEDIUM;
         }
         return RiskLevel.LOW;
@@ -635,6 +646,11 @@ public class AnalyticsService {
 
     private int clamp(int score) {
         return Math.max(0, Math.min(100, score));
+    }
+
+    private AnalyticsConfig getAnalyticsConfig() {
+        return analyticsConfigRepository.findById(1L)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INTERNAL_SERVER_ERROR, "analytics config가 초기화되지 않았습니다."));
     }
 
     private List<String> buildUnderstandingStrengths(DailyAnalyticsSnapshot snapshot, List<AiFollowUpAnalysis> analyses) {
