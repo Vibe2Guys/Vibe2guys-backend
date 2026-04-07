@@ -1,0 +1,45 @@
+package com.vibe2guys.backend.analytics.controller;
+
+import com.vibe2guys.backend.analytics.dto.InstructorDashboardResponse;
+import com.vibe2guys.backend.analytics.dto.StudentDashboardResponse;
+import com.vibe2guys.backend.analytics.dto.StudentScoresResponse;
+import com.vibe2guys.backend.analytics.service.AnalyticsService;
+import com.vibe2guys.backend.common.response.ApiResponse;
+import com.vibe2guys.backend.common.security.UserPrincipal;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/v1")
+public class AnalyticsController {
+
+    private final AnalyticsService analyticsService;
+
+    @GetMapping("/students/{studentId}/scores")
+    public ApiResponse<StudentScoresResponse> getStudentScores(
+            @PathVariable Long studentId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("학생 점수 조회 성공", analyticsService.getStudentScores(studentId, principal.getId()));
+    }
+
+    @GetMapping("/dashboard/student")
+    public ApiResponse<StudentDashboardResponse> getStudentDashboard(
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("학습자 대시보드 조회 성공", analyticsService.getStudentDashboard(principal.getId()));
+    }
+
+    @GetMapping("/dashboard/instructor/courses/{courseId}")
+    public ApiResponse<InstructorDashboardResponse> getInstructorDashboard(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("교수자 대시보드 조회 성공", analyticsService.getInstructorDashboard(courseId, principal.getId()));
+    }
+}
