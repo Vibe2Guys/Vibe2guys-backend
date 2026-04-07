@@ -4,8 +4,11 @@ import com.vibe2guys.backend.analytics.domain.DailyAnalyticsSnapshot;
 import com.vibe2guys.backend.analytics.domain.RiskLevel;
 import com.vibe2guys.backend.analytics.dto.InstructorDashboardResponse;
 import com.vibe2guys.backend.analytics.dto.InstructorRiskStudentItemResponse;
+import com.vibe2guys.backend.analytics.dto.MyReportResponse;
 import com.vibe2guys.backend.analytics.dto.StudentCourseAnalyticsItemResponse;
 import com.vibe2guys.backend.analytics.dto.StudentDashboardResponse;
+import com.vibe2guys.backend.analytics.dto.StudentRecommendationsResponse;
+import com.vibe2guys.backend.analytics.dto.StudentRiskResponse;
 import com.vibe2guys.backend.analytics.dto.StudentScoresResponse;
 import com.vibe2guys.backend.analytics.repository.DailyAnalyticsSnapshotRepository;
 import com.vibe2guys.backend.assignment.domain.Assignment;
@@ -109,6 +112,34 @@ public class AnalyticsService {
         );
     }
 
+    public MyReportResponse getMyReport(Long userId) {
+        return new MyReportResponse(getStudentDashboard(userId));
+    }
+
+    public StudentRiskResponse getStudentRisk(Long studentId, Long requesterId) {
+        User requester = userService.getById(requesterId);
+        User student = userService.getById(studentId);
+        List<DailyAnalyticsSnapshot> snapshots = resolveSnapshotsForStudent(student, requester);
+        if (snapshots.isEmpty()) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "조회 가능한 위험도 스냅샷이 없습니다.");
+        }
+        return StudentRiskResponse.from(aggregateSnapshots(snapshots));
+    }
+
+    public StudentRecommendationsResponse getRecommendations(Long studentId, Long requesterId) {
+        User requester = userService.getById(requesterId);
+        User student = userService.getById(studentId);
+        if (requester.getRole() == UserRole.STUDENT && !requester.getId().equals(studentId)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "본인 추천만 조회할 수 있습니다.");
+        }
+        List<DailyAnalyticsSnapshot> snapshots = resolveSnapshotsForStudent(student, requester);
+        if (snapshots.isEmpty()) {
+            return new StudentRecommendationsResponse(List.of("학습 데이터가 쌓이면 맞춤 추천을 제공할 수 있습니다."));
+        }
+        DailyAnalyticsSnapshot overall = aggregateSnapshots(snapshots);
+        return new StudentRecommendationsResponse(buildRecommendations(overall));
+    }
+
     public InstructorDashboardResponse getInstructorDashboard(Long courseId, Long userId) {
         User user = userService.getById(userId);
         Course course = getManageableCourse(courseId, user);
@@ -130,6 +161,15 @@ public class AnalyticsService {
                 snapshots.size(),
                 riskStudents
         );
+    }
+
+    public List<InstructorRiskStudentItemResponse> getRiskStudents(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        getManageableCourse(courseId, user);
+        return ensureSnapshotsForCourse(courseId, LocalDate.now()).stream()
+                .filter(snapshot -> snapshot.getRiskLevel() == RiskLevel.HIGH || snapshot.getRiskLevel() == RiskLevel.MEDIUM)
+                .map(InstructorRiskStudentItemResponse::from)
+                .toList();
     }
 
     @Transactional
@@ -337,6 +377,23 @@ public class AnalyticsService {
             todos.add("현재 학습 흐름을 유지하세요.");
         }
         return todos;
+    }
+
+    private List<String> buildRecommendations(DailyAnalyticsSnapshot snapshot) {
+        List<String> recommendations = new ArrayList<>();
+        if (snapshot.getDropoutRiskScore() >= 70) {
+            recommendations.add("이번 주에는 가장 진도가 낮은 강의부터 복습하세요.");
+        }
+        if (snapshot.getUnderstandingScore() < 60) {
+            recommendations.add("최근 퀴즈에서 틀린 개념을 다시 정리하고 유사 문제를 풀어보세요.");
+        }
+        if (snapshot.getDiligenceScore() < 70) {
+            recommendations.add("출석과 과제 제출 일정을 먼저 점검하세요.");
+        }
+        if (recommendations.isEmpty()) {
+            recommendations.add("현재 학습 리듬을 유지하면서 다음 강의도 미리 확인해보세요.");
+        }
+        return recommendations;
     }
 
     private RiskLevel resolveRiskLevel(int riskScore) {
