@@ -8,3 +8,8 @@ app:
   jwt:
     secret: local-development-secret-key-local-development-secret-key
     refresh-token-hash-secret: local-refresh-token-hash-secret-local-refresh-token-hash-secret
+  security:
+    backoffice:
+      path-prefix: /api/v1/backoffice
+      header-name: X-Backoffice-Key
+      access-key: local-backoffice-access-key

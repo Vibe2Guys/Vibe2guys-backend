@@ -27,11 +27,12 @@ import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, LoginThrottleProperties.class})
+@EnableConfigurationProperties({JwtProperties.class, LoginThrottleProperties.class, BackofficeAccessProperties.class})
 @RequiredArgsConstructor
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final BackofficeAccessFilter backofficeAccessFilter;
     private final CustomUserDetailsService customUserDetailsService;
     private final ObjectMapper objectMapper;
 
@@ -45,11 +46,13 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/v1/auth/**").permitAll()
+                        .requestMatchers("/api/v1/backoffice/**").hasRole("ADMIN")
                         .requestMatchers("/error").permitAll()
                         .anyRequest().authenticated()
                 )
                 .authenticationProvider(authenticationProvider())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(backofficeAccessFilter, JwtAuthenticationFilter.class)
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint((request, response, authException) -> {
                             response.setStatus(ErrorCode.AUTH_REQUIRED.getStatus().value());

@@ -6,7 +6,12 @@
 - 교수자/학생 계정 생성
 - 분석 기준 조회/수정
 
-## `GET /api/v1/admin/users`
+백오피스 API는 아래 두 조건을 모두 만족해야 한다.
+
+- `ADMIN` 권한
+- `X-Backoffice-Key` 헤더
+
+## `GET /api/v1/backoffice/users`
 
 관리자가 사용자 목록을 조회한다.
 
@@ -17,7 +22,7 @@ Query Params:
 - `role`
 - `keyword`
 
-## `POST /api/v1/admin/users`
+## `POST /api/v1/backoffice/users`
 
 관리자가 학생 또는 교수자 계정을 생성한다.
 
@@ -32,11 +37,11 @@ Request:
 }
 ```
 
-## `GET /api/v1/admin/analytics-config`
+## `GET /api/v1/backoffice/analytics-config`
 
 현재 규칙 기반 분석 가중치와 risk threshold를 조회한다.
 
-## `PATCH /api/v1/admin/analytics-config`
+## `PATCH /api/v1/backoffice/analytics-config`
 
 규칙 기반 분석 가중치와 risk threshold를 수정한다.
 
@@ -59,3 +64,4 @@ Request:
 - 가중치 합계는 `1.0`이어야 한다.
 - `riskThresholdHigh`는 `riskThresholdMedium`보다 커야 한다.
 - 관리자 계정 생성은 이 API 범위에서 제외하고 학생/교수자 계정만 생성한다.
+- 공개 Swagger 그룹에는 백오피스 API를 노출하지 않는다.
