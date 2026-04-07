@@ -14,6 +14,7 @@ import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Date;
+import java.util.Objects;
 
 @Component
 public class JwtTokenProvider {
@@ -35,6 +36,7 @@ public class JwtTokenProvider {
         Instant expiresAt = now.plusSeconds(jwtProperties.accessTokenExpirationSeconds());
         return Jwts.builder()
                 .subject(String.valueOf(principal.getId()))
+                .claim("type", "access")
                 .claim("email", principal.getEmail())
                 .claim("role", principal.getRole())
                 .issuedAt(Date.from(now))
@@ -59,9 +61,25 @@ public class JwtTokenProvider {
         return Long.valueOf(parseClaims(token).getSubject());
     }
 
-    public void validateToken(String token) {
+    public void validateAccessToken(String token) {
+        Claims claims = parseAndValidate(token);
+        String type = claims.get("type", String.class);
+        if (!Objects.equals(type, "access")) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID, "access token이 아닙니다.");
+        }
+    }
+
+    public void validateRefreshToken(String token) {
+        Claims claims = parseAndValidate(token);
+        String type = claims.get("type", String.class);
+        if (!Objects.equals(type, "refresh")) {
+            throw new BusinessException(ErrorCode.TOKEN_INVALID, "refresh token이 아닙니다.");
+        }
+    }
+
+    private Claims parseAndValidate(String token) {
         try {
-            parseClaims(token);
+            return parseClaims(token);
         } catch (ExpiredJwtException ex) {
             throw new BusinessException(ErrorCode.TOKEN_EXPIRED, "토큰이 만료되었습니다.");
         } catch (JwtException | IllegalArgumentException ex) {

@@ -23,6 +23,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -62,9 +63,13 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest httpServletRequest) {
-        authenticationManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.email(), request.password())
-        );
+        try {
+            authenticationManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.email(), request.password())
+            );
+        } catch (AuthenticationException ex) {
+            throw new BusinessException(ErrorCode.INVALID_CREDENTIALS, "이메일 또는 비밀번호가 올바르지 않습니다.");
+        }
 
         UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(request.email());
         String accessToken = jwtTokenProvider.createAccessToken(principal);
@@ -85,7 +90,7 @@ public class AuthService {
 
     @Transactional
     public TokenRefreshResponse refresh(TokenRefreshRequest request) {
-        jwtTokenProvider.validateToken(request.refreshToken());
+        jwtTokenProvider.validateRefreshToken(request.refreshToken());
 
         RefreshToken refreshToken = refreshTokenRepository.findByToken(request.refreshToken())
                 .orElseThrow(() -> new BusinessException(ErrorCode.TOKEN_INVALID, "refresh token을 찾을 수 없습니다."));

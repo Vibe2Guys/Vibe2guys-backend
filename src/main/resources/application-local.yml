@@ -1,0 +1,9 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/vibe2guys
+    username: postgres
+    password: postgres
+
+app:
+  jwt:
+    secret: local-development-secret-key-local-development-secret-key

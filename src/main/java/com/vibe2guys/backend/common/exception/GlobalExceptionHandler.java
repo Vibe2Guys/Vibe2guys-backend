@@ -2,6 +2,9 @@ package com.vibe2guys.backend.common.exception;
 
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.authentication.AuthenticationCredentialsNotFoundException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.authentication.DisabledException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -31,6 +34,20 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ErrorResponse.of(ErrorCode.INVALID_INPUT, ex.getMessage()));
+    }
+
+    @ExceptionHandler({BadCredentialsException.class, AuthenticationCredentialsNotFoundException.class})
+    public ResponseEntity<ErrorResponse> handleBadCredentials(Exception ex) {
+        return ResponseEntity
+                .status(ErrorCode.INVALID_CREDENTIALS.getStatus())
+                .body(ErrorResponse.of(ErrorCode.INVALID_CREDENTIALS, "이메일 또는 비밀번호가 올바르지 않습니다."));
+    }
+
+    @ExceptionHandler(DisabledException.class)
+    public ResponseEntity<ErrorResponse> handleDisabledException(DisabledException ex) {
+        return ResponseEntity
+                .status(ErrorCode.USER_INACTIVE.getStatus())
+                .body(ErrorResponse.of(ErrorCode.USER_INACTIVE, "비활성 사용자입니다."));
     }
 
     @ExceptionHandler(Exception.class)
