@@ -107,6 +107,11 @@ public class ContentProgressService {
         if (enrollment.getStatus() != com.vibe2guys.backend.course.domain.EnrollmentStatus.ENROLLED) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "활성 수강 상태가 아닙니다.");
         }
+        OffsetDateTime now = OffsetDateTime.now();
+        boolean opened = content.getOpenAt() == null || !content.getOpenAt().isAfter(now);
+        if (!content.isPublished() || !opened) {
+            throw new BusinessException(ErrorCode.CONTENT_NOT_FOUND, "콘텐츠를 찾을 수 없습니다.");
+        }
         return content;
     }
 

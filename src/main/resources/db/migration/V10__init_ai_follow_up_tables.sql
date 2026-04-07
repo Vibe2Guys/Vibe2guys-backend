@@ -17,7 +17,7 @@ CREATE INDEX idx_ai_follow_up_questions_student_course ON ai_follow_up_questions
 CREATE TABLE ai_follow_up_responses
 (
     id                     BIGSERIAL PRIMARY KEY,
-    question_id            BIGINT        NOT NULL REFERENCES ai_follow_up_questions (id),
+    question_id            BIGINT        NOT NULL UNIQUE REFERENCES ai_follow_up_questions (id),
     student_user_id        BIGINT        NOT NULL REFERENCES users (id),
     answer_text            VARCHAR(10000) NOT NULL,
     response_delay_seconds INTEGER       NOT NULL,
@@ -31,7 +31,7 @@ CREATE INDEX idx_ai_follow_up_responses_question ON ai_follow_up_responses (ques
 CREATE TABLE ai_follow_up_analyses
 (
     id                  BIGSERIAL PRIMARY KEY,
-    question_id         BIGINT        NOT NULL REFERENCES ai_follow_up_questions (id),
+    question_id         BIGINT        NOT NULL UNIQUE REFERENCES ai_follow_up_questions (id),
     response_id         BIGINT        NOT NULL UNIQUE REFERENCES ai_follow_up_responses (id),
     understanding_score INTEGER       NOT NULL,
     feedback            VARCHAR(2000) NOT NULL,

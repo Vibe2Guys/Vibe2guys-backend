@@ -50,7 +50,7 @@ import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
-@Transactional(readOnly = true)
+@Transactional
 public class AnalyticsService {
 
     private static final String SCORING_VERSION = "rules-v1";

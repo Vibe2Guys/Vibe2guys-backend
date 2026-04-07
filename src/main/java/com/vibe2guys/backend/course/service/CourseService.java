@@ -237,6 +237,9 @@ public class CourseService {
         Content content = contentRepository.findById(contentId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.CONTENT_NOT_FOUND, "콘텐츠를 찾을 수 없습니다."));
         getAccessibleCourse(content.getCourse().getId(), user);
+        if (user.getRole() == UserRole.STUDENT && !canStudentAccessContent(content, OffsetDateTime.now())) {
+            throw new BusinessException(ErrorCode.CONTENT_NOT_FOUND, "콘텐츠를 찾을 수 없습니다.");
+        }
         return ContentDetailResponse.from(content);
     }
 
@@ -436,6 +439,10 @@ public class CourseService {
         if (user.getRole() == UserRole.INSTRUCTOR || user.getRole() == UserRole.ADMIN) {
             return true;
         }
+        return canStudentAccessContent(content, now);
+    }
+
+    private boolean canStudentAccessContent(Content content, OffsetDateTime now) {
         boolean opened = content.getOpenAt() == null || !content.getOpenAt().isAfter(now);
         return content.isPublished() && opened;
     }

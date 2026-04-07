@@ -87,6 +87,9 @@ public class AiService {
         if (!question.getStudent().getId().equals(student.getId())) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "본인에게 생성된 꼬리질문만 답변할 수 있습니다.");
         }
+        if (responseRepository.existsByQuestionId(questionId)) {
+            throw new BusinessException(ErrorCode.RESOURCE_CONFLICT, "질문당 답변은 1회만 제출할 수 있습니다. 재시도하려면 새 질문을 생성하세요.");
+        }
 
         OffsetDateTime submittedAt = OffsetDateTime.now();
         int delaySeconds = (int) Math.max(0, Duration.between(question.getCreatedAt(), submittedAt).toSeconds());

@@ -21,6 +21,12 @@ public class RefreshTokenHasher {
 
     @PostConstruct
     public void init() {
+        if (jwtProperties.refreshTokenHashSecret() == null || jwtProperties.refreshTokenHashSecret().isBlank()) {
+            throw new IllegalStateException("refresh token hash secret이 설정되어야 합니다.");
+        }
+        if (jwtProperties.refreshTokenHashSecret().equals(jwtProperties.secret())) {
+            throw new IllegalStateException("refresh token hash secret은 JWT secret과 분리되어야 합니다.");
+        }
         this.secretKeySpec = new SecretKeySpec(
                 jwtProperties.refreshTokenHashSecret().getBytes(StandardCharsets.UTF_8),
                 HMAC_ALGORITHM
