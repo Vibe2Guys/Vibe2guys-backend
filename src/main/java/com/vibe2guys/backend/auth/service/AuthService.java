@@ -14,6 +14,7 @@ import com.vibe2guys.backend.common.exception.ErrorCode;
 import com.vibe2guys.backend.common.security.CustomUserDetailsService;
 import com.vibe2guys.backend.common.security.JwtProperties;
 import com.vibe2guys.backend.common.security.JwtTokenProvider;
+import com.vibe2guys.backend.common.security.RefreshTokenHasher;
 import com.vibe2guys.backend.common.security.UserPrincipal;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
@@ -42,6 +43,7 @@ public class AuthService {
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtProperties jwtProperties;
+    private final RefreshTokenHasher refreshTokenHasher;
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
@@ -74,12 +76,13 @@ public class AuthService {
         UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(request.email());
         String accessToken = jwtTokenProvider.createAccessToken(principal);
         String refreshTokenValue = jwtTokenProvider.createRefreshToken(principal);
+        String refreshTokenHash = refreshTokenHasher.hash(refreshTokenValue);
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "사용자를 찾을 수 없습니다."));
 
         refreshTokenRepository.save(RefreshToken.builder()
                 .user(user)
-                .token(refreshTokenValue)
+                .tokenHash(refreshTokenHash)
                 .deviceName(httpServletRequest.getHeader("User-Agent"))
                 .ipAddress(httpServletRequest.getRemoteAddr())
                 .expiresAt(OffsetDateTime.now().plusSeconds(jwtProperties.refreshTokenExpirationSeconds()))
@@ -91,8 +94,9 @@ public class AuthService {
     @Transactional
     public TokenRefreshResponse refresh(TokenRefreshRequest request) {
         jwtTokenProvider.validateRefreshToken(request.refreshToken());
+        String refreshTokenHash = refreshTokenHasher.hash(request.refreshToken());
 
-        RefreshToken refreshToken = refreshTokenRepository.findByToken(request.refreshToken())
+        RefreshToken refreshToken = refreshTokenRepository.findByTokenHash(refreshTokenHash)
                 .orElseThrow(() -> new BusinessException(ErrorCode.TOKEN_INVALID, "refresh token을 찾을 수 없습니다."));
 
         OffsetDateTime now = OffsetDateTime.now();
@@ -103,11 +107,12 @@ public class AuthService {
         UserPrincipal principal = customUserDetailsService.loadUserById(refreshToken.getUser().getId());
         String newAccessToken = jwtTokenProvider.createAccessToken(principal);
         String newRefreshToken = jwtTokenProvider.createRefreshToken(principal);
+        String newRefreshTokenHash = refreshTokenHasher.hash(newRefreshToken);
 
         refreshToken.revoke(now);
         refreshTokenRepository.save(RefreshToken.builder()
                 .user(refreshToken.getUser())
-                .token(newRefreshToken)
+                .tokenHash(newRefreshTokenHash)
                 .deviceName(refreshToken.getDeviceName())
                 .ipAddress(refreshToken.getIpAddress())
                 .expiresAt(now.plusSeconds(jwtProperties.refreshTokenExpirationSeconds()))

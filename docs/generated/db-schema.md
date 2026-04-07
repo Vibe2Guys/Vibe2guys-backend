@@ -64,7 +64,7 @@ Columns:
 
 - `id`
 - `user_id`
-- `token`
+- `token` (stores server-side hash, not raw refresh token)
 - `device_name`
 - `ip_address`
 - `expires_at`

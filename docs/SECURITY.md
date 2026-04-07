@@ -10,6 +10,7 @@ This document defines the MVP security baseline for the backend.
 - use JWT access token for protected API access
 - include refresh token in MVP
 - store refresh tokens in DB for revocation and rotation
+- never store raw refresh token values in DB; persist only a server-side hash
 
 ## Authorization
 

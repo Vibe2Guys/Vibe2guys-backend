@@ -24,6 +24,7 @@ MVP direction:
 Refresh token direction:
 
 - persist refresh tokens in DB
+- persist only hashed refresh tokens in DB
 - support token rotation
 - allow token revocation on logout or suspicious session invalidation
 

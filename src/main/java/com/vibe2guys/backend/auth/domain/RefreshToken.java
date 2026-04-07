@@ -32,8 +32,8 @@ public class RefreshToken extends BaseTimeEntity {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    @Column(nullable = false, unique = true, length = 500)
-    private String token;
+    @Column(name = "token", nullable = false, unique = true, length = 500)
+    private String tokenHash;
 
     @Column(name = "device_name", length = 255)
     private String deviceName;
@@ -48,9 +48,9 @@ public class RefreshToken extends BaseTimeEntity {
     private OffsetDateTime revokedAt;
 
     @Builder
-    private RefreshToken(User user, String token, String deviceName, String ipAddress, OffsetDateTime expiresAt) {
+    private RefreshToken(User user, String tokenHash, String deviceName, String ipAddress, OffsetDateTime expiresAt) {
         this.user = user;
-        this.token = token;
+        this.tokenHash = tokenHash;
         this.deviceName = deviceName;
         this.ipAddress = ipAddress;
         this.expiresAt = expiresAt;
