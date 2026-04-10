@@ -1,0 +1,14 @@
+.git
+.github
+.gradle
+.gradle-home
+build
+out
+.idea
+.DS_Store
+src/test
+api-tests
+perf
+*.log
+*.env
+.env.production

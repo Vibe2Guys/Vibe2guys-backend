@@ -64,6 +64,7 @@ This document defines the MVP security baseline for the backend.
 - never hardcode production secrets in source code
 - JWT secrets, DB credentials, and API keys must come from environment or secret storage
 - do not log access tokens, refresh tokens, passwords, or raw authorization headers
+- deployment env files must never be committed with real values
 
 ### Error and Log Safety
 
@@ -109,3 +110,10 @@ At minimum, preserve audit visibility for:
 - institution SSO
 - encryption-at-rest policy details
 - rate limiting for high-frequency learning and chat events
+
+## Deployment Guardrails
+
+- do not expose PostgreSQL publicly unless there is a strong operational reason
+- disable Swagger/OpenAPI endpoints in public production unless explicitly needed
+- backoffice endpoints should require layered controls beyond path knowledge
+- terminate TLS in a trusted reverse proxy or load balancer
