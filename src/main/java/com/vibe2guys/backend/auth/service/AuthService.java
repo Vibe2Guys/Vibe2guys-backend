@@ -53,16 +53,18 @@ public class AuthService {
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
-        if (userRepository.existsByEmail(request.email())) {
+        String normalizedEmail = normalizeEmail(request.email());
+        String normalizedName = request.name().trim();
+        if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS, "이미 사용 중인 이메일입니다.");
         }
         if (request.role() != UserRole.STUDENT) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "MVP에서는 학생만 직접 회원가입할 수 있습니다.");
         }
         User user = userRepository.save(User.builder()
-                .email(request.email())
+                .email(normalizedEmail)
                 .passwordHash(passwordEncoder.encode(request.password()))
-                .name(request.name())
+                .name(normalizedName)
                 .role(request.role())
                 .status(UserStatus.ACTIVE)
                 .build());
@@ -71,7 +73,7 @@ public class AuthService {
 
     @Transactional
     public LoginResponse login(LoginRequest request, HttpServletRequest httpServletRequest) {
-        String normalizedEmail = request.email().trim().toLowerCase();
+        String normalizedEmail = normalizeEmail(request.email());
         String clientIp = resolveClientIp(httpServletRequest);
         OffsetDateTime blockedUntil = loginThrottleService.checkAllowed(normalizedEmail, clientIp);
         if (blockedUntil != null) {
@@ -79,7 +81,7 @@ public class AuthService {
         }
         try {
             authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(request.email(), request.password())
+                    new UsernamePasswordAuthenticationToken(normalizedEmail, request.password())
             );
         } catch (AuthenticationException ex) {
             OffsetDateTime newBlockedUntil = loginThrottleService.recordFailure(normalizedEmail, clientIp);
@@ -90,13 +92,12 @@ public class AuthService {
         }
         loginThrottleService.recordSuccess(normalizedEmail, clientIp);
 
-        UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(request.email());
+        UserPrincipal principal = (UserPrincipal) customUserDetailsService.loadUserByUsername(normalizedEmail);
         String accessToken = jwtTokenProvider.createAccessToken(principal);
         String refreshTokenValue = jwtTokenProvider.createRefreshToken(principal);
         String refreshTokenHash = refreshTokenHasher.hash(refreshTokenValue);
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "사용자를 찾을 수 없습니다."));
-        String clientIp = resolveClientIp(httpServletRequest);
 
         refreshTokenRepository.save(RefreshToken.builder()
                 .user(user)
@@ -166,6 +167,10 @@ public class AuthService {
             }
         }
         return request.getRemoteAddr();
+    }
+
+    private String normalizeEmail(String email) {
+        return email.trim().toLowerCase();
     }
 
     private BusinessException buildRateLimitedException(OffsetDateTime blockedUntil) {
