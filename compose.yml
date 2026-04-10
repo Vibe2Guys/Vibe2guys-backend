@@ -17,6 +17,22 @@ services:
     ports:
       - "${DB_EXPOSE_PORT:-127.0.0.1:5432}:5432"
 
+  migrate:
+    image: flyway/flyway:11-alpine
+    container_name: vibe2guys-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - -url=jdbc:postgresql://db:5432/${POSTGRES_DB}
+      - -user=${POSTGRES_USER}
+      - -password=${POSTGRES_PASSWORD}
+      - -locations=filesystem:/flyway/sql
+      - migrate
+    volumes:
+      - ./src/main/resources/db/migration:/flyway/sql:ro
+
   app:
     build:
       context: .
@@ -24,8 +40,8 @@ services:
     container_name: vibe2guys-backend
     restart: unless-stopped
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       SPRING_PROFILES_ACTIVE: ${SPRING_PROFILES_ACTIVE:-prod}
       DB_URL: jdbc:postgresql://db:5432/${POSTGRES_DB}
