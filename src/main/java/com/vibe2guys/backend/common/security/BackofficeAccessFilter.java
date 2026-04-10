@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.security.MessageDigest;
 import java.nio.charset.StandardCharsets;
 
 @Component
@@ -45,12 +46,22 @@ public class BackofficeAccessFilter extends OncePerRequestFilter {
 
         String expectedAccessKey = backofficeAccessProperties.accessKey();
         String receivedAccessKey = request.getHeader(backofficeAccessProperties.headerName());
-        if (expectedAccessKey == null || expectedAccessKey.isBlank() || !expectedAccessKey.equals(receivedAccessKey)) {
+        if (!matchesAccessKey(expectedAccessKey, receivedAccessKey)) {
             writeErrorResponse(response, ErrorCode.AUTH_REQUIRED, "백오피스 접근 키가 올바르지 않습니다.");
             return;
         }
 
         filterChain.doFilter(request, response);
+    }
+
+    private boolean matchesAccessKey(String expectedAccessKey, String receivedAccessKey) {
+        if (expectedAccessKey == null || expectedAccessKey.isBlank() || receivedAccessKey == null) {
+            return false;
+        }
+        return MessageDigest.isEqual(
+                expectedAccessKey.getBytes(StandardCharsets.UTF_8),
+                receivedAccessKey.getBytes(StandardCharsets.UTF_8)
+        );
     }
 
     private void writeErrorResponse(HttpServletResponse response, ErrorCode errorCode, String message) throws IOException {
