@@ -28,8 +28,15 @@ docker compose --env-file .env.production up -d --build
 - Swagger UI disabled by default in compose
 - OpenAPI docs disabled by default in compose
 - backoffice APIs require both admin JWT and `X-Backoffice-Key`
+- app port defaults to loopback-only exposure
 - DB port defaults to loopback-only exposure
 - secrets are externalized through env file
+
+If you intentionally want direct public exposure without a reverse proxy, change:
+
+```env
+APP_EXPOSE_PORT=0.0.0.0:8080
+```
 
 ## Recommended Production Additions
 
