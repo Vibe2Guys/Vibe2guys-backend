@@ -4,7 +4,6 @@ import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
 import com.vibe2guys.backend.course.domain.Course;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
-import com.vibe2guys.backend.course.domain.CourseInstructor;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
@@ -28,6 +27,7 @@ import com.vibe2guys.backend.team.dto.TeamResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
 import com.vibe2guys.backend.team.repository.TeamChatMessageRepository;
 import com.vibe2guys.backend.team.repository.TeamChatRoomRepository;
+import com.vibe2guys.backend.team.repository.TeamMemberCountView;
 import com.vibe2guys.backend.team.repository.TeamMemberRepository;
 import com.vibe2guys.backend.team.repository.TeamRepository;
 import com.vibe2guys.backend.user.domain.User;
@@ -103,8 +103,10 @@ public class TeamService {
     public List<TeamListItemResponse> getCourseTeams(Long courseId, Long userId) {
         User user = userService.getById(userId);
         getAccessibleCourse(courseId, user);
-        return teamRepository.findByCourseIdAndStatusOrderByIdAsc(courseId, TeamStatus.ACTIVE).stream()
-                .map(team -> TeamListItemResponse.of(team, teamMemberRepository.findByTeamIdAndStatusOrderByIdAsc(team.getId(), TeamMemberStatus.ACTIVE).size()))
+        List<Team> teams = teamRepository.findByCourseIdAndStatusOrderByIdAsc(courseId, TeamStatus.ACTIVE);
+        Map<Long, Long> memberCounts = loadMemberCounts(teams);
+        return teams.stream()
+                .map(team -> TeamListItemResponse.of(team, memberCounts.getOrDefault(team.getId(), 0L).intValue()))
                 .toList();
     }
 
@@ -113,10 +115,13 @@ public class TeamService {
         if (user.getRole() != UserRole.STUDENT) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 자신의 팀을 조회할 수 있습니다.");
         }
-        return teamMemberRepository.findByUserIdAndStatus(userId, TeamMemberStatus.ACTIVE).stream()
+        List<TeamMember> memberships = teamMemberRepository.findByUserIdAndStatus(userId, TeamMemberStatus.ACTIVE);
+        List<Team> teams = memberships.stream().map(TeamMember::getTeam).toList();
+        Map<Long, Long> memberCounts = loadMemberCounts(teams);
+        return memberships.stream()
                 .map(teamMember -> TeamListItemResponse.of(
                         teamMember.getTeam(),
-                        teamMemberRepository.findByTeamIdAndStatusOrderByIdAsc(teamMember.getTeam().getId(), TeamMemberStatus.ACTIVE).size()
+                        memberCounts.getOrDefault(teamMember.getTeam().getId(), 0L).intValue()
                 ))
                 .toList();
     }
@@ -290,10 +295,9 @@ public class TeamService {
         if (user.getRole() != UserRole.INSTRUCTOR) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "강의 관리 권한이 없습니다.");
         }
-        courseInstructorRepository.findByInstructorId(user.getId()).stream()
-                .filter(item -> item.getCourse().getId().equals(courseId))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다."));
+        if (!courseInstructorRepository.existsByInstructorIdAndCourseId(user.getId(), courseId)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다.");
+        }
         return course;
     }
 
@@ -304,11 +308,10 @@ public class TeamService {
             return course;
         }
         if (user.getRole() == UserRole.INSTRUCTOR) {
-            CourseInstructor instructor = courseInstructorRepository.findByInstructorId(user.getId()).stream()
-                    .filter(item -> item.getCourse().getId().equals(courseId))
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다."));
-            return instructor.getCourse();
+            if (!courseInstructorRepository.existsByInstructorIdAndCourseId(user.getId(), courseId)) {
+                throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다.");
+            }
+            return course;
         }
         courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, user.getId())
                 .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ENROLLED)
@@ -321,14 +324,14 @@ public class TeamService {
             return;
         }
         if (user.getRole() == UserRole.INSTRUCTOR) {
-            courseInstructorRepository.findByInstructorId(user.getId()).stream()
-                    .filter(item -> item.getCourse().getId().equals(team.getCourse().getId()))
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의의 팀만 조회할 수 있습니다."));
+            if (!courseInstructorRepository.existsByInstructorIdAndCourseId(user.getId(), team.getCourse().getId())) {
+                throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의의 팀만 조회할 수 있습니다.");
+            }
             return;
         }
-        teamMemberRepository.findByTeamIdAndUserIdAndStatus(team.getId(), user.getId(), TeamMemberStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀만 조회할 수 있습니다."));
+        if (!teamMemberRepository.existsByTeamIdAndUserIdAndStatus(team.getId(), user.getId(), TeamMemberStatus.ACTIVE)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀만 조회할 수 있습니다.");
+        }
     }
 
     private void ensureEnrollActive(Long courseId, Long userId) {
@@ -341,8 +344,21 @@ public class TeamService {
         if (user.getRole() != UserRole.STUDENT) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 팀 채팅 메시지를 보낼 수 있습니다.");
         }
-        teamMemberRepository.findByTeamIdAndUserIdAndStatus(teamId, user.getId(), TeamMemberStatus.ACTIVE)
-                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀 채팅방에만 메시지를 보낼 수 있습니다."));
+        if (!teamMemberRepository.existsByTeamIdAndUserIdAndStatus(teamId, user.getId(), TeamMemberStatus.ACTIVE)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "소속된 팀 채팅방에만 메시지를 보낼 수 있습니다.");
+        }
+    }
+
+    private Map<Long, Long> loadMemberCounts(List<Team> teams) {
+        if (teams.isEmpty()) {
+            return Map.of();
+        }
+        List<Long> teamIds = teams.stream().map(Team::getId).toList();
+        Map<Long, Long> counts = new HashMap<>();
+        for (TeamMemberCountView countView : teamMemberRepository.countByTeamIdsAndStatus(teamIds, TeamMemberStatus.ACTIVE)) {
+            counts.put(countView.getTeamId(), countView.getMemberCount());
+        }
+        return counts;
     }
 
     private Map<Long, Integer> countMessages(List<TeamChatMessage> messages) {

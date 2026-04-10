@@ -16,6 +16,12 @@ public interface CourseEnrollmentRepository extends JpaRepository<CourseEnrollme
 
     List<CourseEnrollment> findByStudentIdAndStatus(Long studentId, com.vibe2guys.backend.course.domain.EnrollmentStatus status);
 
+    List<CourseEnrollment> findByStudentIdAndCourseIdInAndStatus(
+            Long studentId,
+            List<Long> courseIds,
+            com.vibe2guys.backend.course.domain.EnrollmentStatus status
+    );
+
     List<CourseEnrollment> findByCourseIdAndStatus(Long courseId, com.vibe2guys.backend.course.domain.EnrollmentStatus status);
 
     boolean existsByCourseIdAndStudentIdAndStatus(Long courseId, Long studentId, com.vibe2guys.backend.course.domain.EnrollmentStatus status);

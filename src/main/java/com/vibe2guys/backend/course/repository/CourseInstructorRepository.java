@@ -9,4 +9,8 @@ public interface CourseInstructorRepository extends JpaRepository<CourseInstruct
     List<CourseInstructor> findByInstructorId(Long instructorId);
 
     List<CourseInstructor> findByCourseId(Long courseId);
+
+    List<CourseInstructor> findByCourseIdIn(List<Long> courseIds);
+
+    boolean existsByInstructorIdAndCourseId(Long instructorId, Long courseId);
 }

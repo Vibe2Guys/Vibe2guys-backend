@@ -51,8 +51,10 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -84,11 +86,14 @@ public class CourseService {
         Page<Course> coursePage = normalizedKeyword.isBlank()
                 ? courseRepository.findAll(pageRequest)
                 : courseRepository.findByTitleContainingIgnoreCase(normalizedKeyword, pageRequest);
+        List<Course> courses = coursePage.getContent();
+        Map<Long, String> instructorNames = resolveInstructorNames(courses);
+        Set<Long> enrolledCourseIds = resolveEnrolledCourseIds(user, courses);
 
         return PageResponse.from(coursePage.map(course -> CourseListItemResponse.of(
                         course,
-                        resolveInstructorName(course),
-                        isEnrolledCourse(user, course)
+                        instructorNames.getOrDefault(course.getId(), course.getCreatedBy().getName()),
+                        enrolledCourseIds.contains(course.getId())
                 )));
     }
 
@@ -343,10 +348,9 @@ public class CourseService {
             return course;
         }
         if (user.getRole() == UserRole.INSTRUCTOR) {
-            courseInstructorRepository.findByInstructorId(user.getId()).stream()
-                    .filter(item -> item.getCourse().getId().equals(courseId))
-                    .findFirst()
-                    .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다."));
+            if (!courseInstructorRepository.existsByInstructorIdAndCourseId(user.getId(), courseId)) {
+                throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 접근할 수 있습니다.");
+            }
             return course;
         }
 
@@ -367,10 +371,9 @@ public class CourseService {
         if (user.getRole() != UserRole.INSTRUCTOR) {
             throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "강의 관리 권한이 없습니다.");
         }
-        courseInstructorRepository.findByInstructorId(user.getId()).stream()
-                .filter(item -> item.getCourse().getId().equals(courseId))
-                .findFirst()
-                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다."));
+        if (!courseInstructorRepository.existsByInstructorIdAndCourseId(user.getId(), courseId)) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "담당 강의만 관리할 수 있습니다.");
+        }
         return course;
     }
 
@@ -405,18 +408,35 @@ public class CourseService {
         return keyword == null ? "" : keyword.trim();
     }
 
-    private String resolveInstructorName(Course course) {
-        return courseInstructorRepository.findByCourseId(course.getId()).stream()
-                .findFirst()
-                .map(item -> item.getInstructor().getName())
-                .orElse(course.getCreatedBy().getName());
+    private Map<Long, String> resolveInstructorNames(List<Course> courses) {
+        Map<Long, String> instructorNames = new HashMap<>();
+        if (courses.isEmpty()) {
+            return instructorNames;
+        }
+        List<Long> courseIds = courses.stream().map(Course::getId).toList();
+        for (CourseInstructor instructor : courseInstructorRepository.findByCourseIdIn(courseIds)) {
+            instructorNames.putIfAbsent(instructor.getCourse().getId(), instructor.getInstructor().getName());
+        }
+        for (Course course : courses) {
+            instructorNames.putIfAbsent(course.getId(), course.getCreatedBy().getName());
+        }
+        return instructorNames;
     }
 
-    private boolean isEnrolledCourse(User user, Course course) {
-        if (user.getRole() != UserRole.STUDENT) {
-            return false;
+    private Set<Long> resolveEnrolledCourseIds(User user, List<Course> courses) {
+        if (user.getRole() != UserRole.STUDENT || courses.isEmpty()) {
+            return Set.of();
         }
-        return courseEnrollmentRepository.existsByCourseIdAndStudentIdAndStatus(course.getId(), user.getId(), EnrollmentStatus.ENROLLED);
+        List<Long> courseIds = courses.stream().map(Course::getId).toList();
+        Set<Long> enrolledCourseIds = new HashSet<>();
+        for (CourseEnrollment enrollment : courseEnrollmentRepository.findByStudentIdAndCourseIdInAndStatus(
+                user.getId(),
+                courseIds,
+                EnrollmentStatus.ENROLLED
+        )) {
+            enrolledCourseIds.add(enrollment.getCourse().getId());
+        }
+        return enrolledCourseIds;
     }
 
     private String resolveUpdatedText(String updatedValue, String currentValue, String fieldName) {
