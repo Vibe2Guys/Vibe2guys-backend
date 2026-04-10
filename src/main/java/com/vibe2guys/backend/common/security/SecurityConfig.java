@@ -27,7 +27,12 @@ import java.nio.charset.StandardCharsets;
 
 @Configuration
 @EnableMethodSecurity
-@EnableConfigurationProperties({JwtProperties.class, LoginThrottleProperties.class, BackofficeAccessProperties.class})
+@EnableConfigurationProperties({
+        JwtProperties.class,
+        LoginThrottleProperties.class,
+        BackofficeAccessProperties.class,
+        SecurityNetworkProperties.class
+})
 @RequiredArgsConstructor
 public class SecurityConfig {
 

@@ -9,6 +9,8 @@ app:
     secret: local-development-secret-key-local-development-secret-key
     refresh-token-hash-secret: local-refresh-token-hash-secret-local-refresh-token-hash-secret
   security:
+    network:
+      trust-proxy-headers: false
     backoffice:
       path-prefix: /api/v1/backoffice
       header-name: X-Backoffice-Key

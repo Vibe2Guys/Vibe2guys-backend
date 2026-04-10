@@ -17,6 +17,7 @@ import com.vibe2guys.backend.common.security.CustomUserDetailsService;
 import com.vibe2guys.backend.common.security.JwtProperties;
 import com.vibe2guys.backend.common.security.JwtTokenProvider;
 import com.vibe2guys.backend.common.security.RefreshTokenHasher;
+import com.vibe2guys.backend.common.security.SecurityNetworkProperties;
 import com.vibe2guys.backend.common.security.UserPrincipal;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
@@ -48,6 +49,7 @@ public class AuthService {
     private final JwtProperties jwtProperties;
     private final RefreshTokenHasher refreshTokenHasher;
     private final LoginThrottleService loginThrottleService;
+    private final SecurityNetworkProperties securityNetworkProperties;
 
     @Transactional
     public RegisterResponse register(RegisterRequest request) {
@@ -94,12 +96,13 @@ public class AuthService {
         String refreshTokenHash = refreshTokenHasher.hash(refreshTokenValue);
         User user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "사용자를 찾을 수 없습니다."));
+        String clientIp = resolveClientIp(httpServletRequest);
 
         refreshTokenRepository.save(RefreshToken.builder()
                 .user(user)
                 .tokenHash(refreshTokenHash)
                 .deviceName(httpServletRequest.getHeader("User-Agent"))
-                .ipAddress(httpServletRequest.getRemoteAddr())
+                .ipAddress(clientIp)
                 .expiresAt(OffsetDateTime.now().plusSeconds(jwtProperties.refreshTokenExpirationSeconds()))
                 .build());
 
@@ -152,9 +155,15 @@ public class AuthService {
     }
 
     private String resolveClientIp(HttpServletRequest request) {
-        String forwardedFor = request.getHeader("X-Forwarded-For");
-        if (forwardedFor != null && !forwardedFor.isBlank()) {
-            return forwardedFor.split(",")[0].trim();
+        if (securityNetworkProperties.trustProxyHeaders()) {
+            String forwardedFor = request.getHeader("X-Forwarded-For");
+            if (forwardedFor != null && !forwardedFor.isBlank()) {
+                return forwardedFor.split(",")[0].trim();
+            }
+            String realIp = request.getHeader("X-Real-IP");
+            if (realIp != null && !realIp.isBlank()) {
+                return realIp.trim();
+            }
         }
         return request.getRemoteAddr();
     }
