@@ -47,7 +47,7 @@ public class AdminService {
 
     public PageResponse<AdminUserItemResponse> getUsers(Long requesterId, int page, int size, String role, String keyword) {
         ensureAdmin(requesterId);
-        Specification<User> specification = Specification.where((Specification<User>) null);
+        Specification<User> specification = (root, query, cb) -> cb.conjunction();
         if (role != null && !role.isBlank()) {
             UserRole parsedRole;
             try {
