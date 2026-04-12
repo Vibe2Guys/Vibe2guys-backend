@@ -14,6 +14,7 @@ public record UpdateCourseRequest(
         LocalDate startDate,
         LocalDate endDate,
         Boolean isSequentialRelease,
+        Boolean isPublic,
         String status
 ) {
 }

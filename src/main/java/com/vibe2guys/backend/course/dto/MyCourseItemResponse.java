@@ -6,6 +6,8 @@ public record MyCourseItemResponse(
         String description,
         String thumbnailUrl,
         String instructorName,
+        String courseCode,
+        boolean isPublic,
         int progressRate,
         int attendanceRate,
         int assignmentPendingCount

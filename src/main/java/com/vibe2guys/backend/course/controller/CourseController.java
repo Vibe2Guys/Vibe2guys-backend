@@ -11,6 +11,7 @@ import com.vibe2guys.backend.course.dto.CreateCourseResponse;
 import com.vibe2guys.backend.course.dto.CreateWeekRequest;
 import com.vibe2guys.backend.course.dto.CreateWeekResponse;
 import com.vibe2guys.backend.course.dto.CourseDetailResponse;
+import com.vibe2guys.backend.course.dto.EnrollByCodeRequest;
 import com.vibe2guys.backend.course.dto.EnrollmentResponse;
 import com.vibe2guys.backend.course.dto.MyCourseItemResponse;
 import com.vibe2guys.backend.course.dto.UpdateCourseRequest;
@@ -87,6 +88,14 @@ public class CourseController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("수강 신청 완료", courseService.enroll(courseId, principal.getId()));
+    }
+
+    @PostMapping("/enroll-by-code")
+    public ApiResponse<EnrollmentResponse> enrollByCode(
+            @Valid @RequestBody EnrollByCodeRequest request,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("강의 코드 등록 완료", courseService.enrollByCode(request.courseCode(), principal.getId()));
     }
 
     @PostMapping("/{courseId}/weeks")

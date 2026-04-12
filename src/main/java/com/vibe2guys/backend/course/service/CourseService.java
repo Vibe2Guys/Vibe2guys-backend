@@ -61,6 +61,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -91,9 +92,7 @@ public class CourseService {
         User user = userService.getById(userId);
         PageRequest pageRequest = PageRequest.of(normalizePage(page), normalizeSize(size));
         String normalizedKeyword = normalizeKeyword(keyword);
-        Page<Course> coursePage = normalizedKeyword.isBlank()
-                ? courseRepository.findAll(pageRequest)
-                : courseRepository.findByTitleContainingIgnoreCase(normalizedKeyword, pageRequest);
+        Page<Course> coursePage = resolveCoursePage(user, normalizedKeyword, pageRequest);
         List<Course> courses = coursePage.getContent();
         Map<Long, String> instructorNames = resolveInstructorNames(courses);
         Set<Long> enrolledCourseIds = resolveEnrolledCourseIds(user, courses);
@@ -114,11 +113,36 @@ public class CourseService {
 
         Course course = courseRepository.findById(courseId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "강의를 찾을 수 없습니다."));
+        if (!course.isPublic()) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "비공개 강의는 강의 코드로만 등록할 수 있습니다.");
+        }
 
         if (courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, userId).isPresent()) {
             throw new BusinessException(ErrorCode.COURSE_ALREADY_ENROLLED, "이미 수강 신청된 강의입니다.");
         }
 
+        return createEnrollment(course, user);
+    }
+
+    @Transactional
+    public EnrollmentResponse enrollByCode(String rawCourseCode, Long userId) {
+        User user = userService.getById(userId);
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "학생만 강의 등록을 할 수 있습니다.");
+        }
+        String courseCode = normalizeKeyword(rawCourseCode).toUpperCase();
+        if (courseCode.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "강의 코드를 입력해주세요.");
+        }
+        Course course = courseRepository.findByCourseCodeIgnoreCase(courseCode)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "일치하는 강의 코드를 찾을 수 없습니다."));
+        if (courseEnrollmentRepository.findByCourseIdAndStudentId(course.getId(), userId).isPresent()) {
+            throw new BusinessException(ErrorCode.COURSE_ALREADY_ENROLLED, "이미 수강 신청된 강의입니다.");
+        }
+        return createEnrollment(course, user);
+    }
+
+    private EnrollmentResponse createEnrollment(Course course, User user) {
         CourseEnrollment enrollment = courseEnrollmentRepository.save(CourseEnrollment.builder()
                 .course(course)
                 .student(user)
@@ -146,6 +170,8 @@ public class CourseService {
                 .startDate(request.startDate())
                 .endDate(request.endDate())
                 .sequentialRelease(request.isSequentialRelease())
+                .isPublic(request.isPublic())
+                .courseCode(generateCourseCode())
                 .status(CourseStatus.DRAFT)
                 .createdBy(user)
                 .build());
@@ -174,9 +200,10 @@ public class CourseService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "종료일은 시작일보다 빠를 수 없습니다.");
         }
         boolean sequentialRelease = request.isSequentialRelease() != null ? request.isSequentialRelease() : course.isSequentialRelease();
+        boolean isPublic = request.isPublic() != null ? request.isPublic() : course.isPublic();
         CourseStatus status = request.status() != null ? parseCourseStatus(request.status()) : course.getStatus();
 
-        course.update(title, description, thumbnailUrl, startDate, endDate, sequentialRelease, status);
+        course.update(title, description, thumbnailUrl, startDate, endDate, sequentialRelease, isPublic, status);
         return UpdateCourseResponse.from(course);
     }
 
@@ -356,6 +383,8 @@ public class CourseService {
                     course.getDescription(),
                     course.getThumbnailUrl(),
                     null,
+                    course.getCourseCode(),
+                    course.isPublic(),
                     0,
                     0,
                     0
@@ -374,6 +403,8 @@ public class CourseService {
                     course.getDescription(),
                     course.getThumbnailUrl(),
                     instructor.getInstructor().getName(),
+                    course.getCourseCode(),
+                    course.isPublic(),
                     0,
                     0,
                     0
@@ -448,6 +479,17 @@ public class CourseService {
 
     private String normalizeKeyword(String keyword) {
         return keyword == null ? "" : keyword.trim();
+    }
+
+    private Page<Course> resolveCoursePage(User user, String keyword, PageRequest pageRequest) {
+        if (user.getRole() == UserRole.INSTRUCTOR || user.getRole() == UserRole.ADMIN) {
+            return keyword.isBlank()
+                    ? courseRepository.findAll(pageRequest)
+                    : courseRepository.findByTitleContainingIgnoreCase(keyword, pageRequest);
+        }
+        return keyword.isBlank()
+                ? courseRepository.findByIsPublicTrue(pageRequest)
+                : courseRepository.findByIsPublicTrueAndTitleContainingIgnoreCase(keyword, pageRequest);
     }
 
     private CourseStudentItemResponse toCourseStudentItemResponse(CourseEnrollment enrollment, int contentCount, String memo) {
@@ -558,6 +600,10 @@ public class CourseService {
         } catch (IllegalArgumentException ex) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "지원하지 않는 강의 상태입니다.");
         }
+    }
+
+    private String generateCourseCode() {
+        return "CRS-" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
     }
 
     private boolean canViewContent(User user, Content content, OffsetDateTime now) {

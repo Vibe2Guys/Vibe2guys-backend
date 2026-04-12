@@ -48,6 +48,12 @@ public class Course extends BaseTimeEntity {
     @Column(name = "is_sequential_release", nullable = false)
     private boolean sequentialRelease;
 
+    @Column(name = "is_public", nullable = false)
+    private boolean isPublic;
+
+    @Column(name = "course_code", nullable = false, length = 20, unique = true)
+    private String courseCode;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private CourseStatus status;
@@ -64,6 +70,8 @@ public class Course extends BaseTimeEntity {
             LocalDate startDate,
             LocalDate endDate,
             boolean sequentialRelease,
+            boolean isPublic,
+            String courseCode,
             CourseStatus status,
             User createdBy
     ) {
@@ -73,6 +81,8 @@ public class Course extends BaseTimeEntity {
         this.startDate = startDate;
         this.endDate = endDate;
         this.sequentialRelease = sequentialRelease;
+        this.isPublic = isPublic;
+        this.courseCode = courseCode;
         this.status = status;
         this.createdBy = createdBy;
     }
@@ -84,6 +94,7 @@ public class Course extends BaseTimeEntity {
             LocalDate startDate,
             LocalDate endDate,
             boolean sequentialRelease,
+            boolean isPublic,
             CourseStatus status
     ) {
         this.title = title;
@@ -92,6 +103,7 @@ public class Course extends BaseTimeEntity {
         this.startDate = startDate;
         this.endDate = endDate;
         this.sequentialRelease = sequentialRelease;
+        this.isPublic = isPublic;
         this.status = status;
     }
 }

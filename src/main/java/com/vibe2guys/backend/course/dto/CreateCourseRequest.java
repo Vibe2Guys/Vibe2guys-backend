@@ -19,6 +19,7 @@ public record CreateCourseRequest(
         LocalDate startDate,
         @NotNull(message = "endDate는 필수입니다.")
         LocalDate endDate,
-        boolean isSequentialRelease
+        boolean isSequentialRelease,
+        boolean isPublic
 ) {
 }

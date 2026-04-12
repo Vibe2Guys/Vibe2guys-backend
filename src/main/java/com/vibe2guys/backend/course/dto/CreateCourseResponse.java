@@ -4,9 +4,11 @@ import com.vibe2guys.backend.course.domain.Course;
 
 public record CreateCourseResponse(
         Long courseId,
-        String title
+        String title,
+        String courseCode,
+        boolean isPublic
 ) {
     public static CreateCourseResponse from(Course course) {
-        return new CreateCourseResponse(course.getId(), course.getTitle());
+        return new CreateCourseResponse(course.getId(), course.getTitle(), course.getCourseCode(), course.isPublic());
     }
 }
