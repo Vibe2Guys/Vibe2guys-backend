@@ -58,8 +58,8 @@ public class AuthService {
         if (userRepository.existsByEmail(normalizedEmail)) {
             throw new BusinessException(ErrorCode.EMAIL_ALREADY_EXISTS, "이미 사용 중인 이메일입니다.");
         }
-        if (request.role() != UserRole.STUDENT) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "MVP에서는 학생만 직접 회원가입할 수 있습니다.");
+        if (request.role() == UserRole.ADMIN) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "관리자 계정은 직접 회원가입할 수 없습니다.");
         }
         User user = userRepository.save(User.builder()
                 .email(normalizedEmail)

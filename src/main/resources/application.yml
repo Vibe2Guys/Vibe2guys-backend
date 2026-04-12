@@ -26,6 +26,7 @@ app:
   security:
     network:
       trust-proxy-headers: ${TRUST_PROXY_HEADERS:false}
+      allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000}
     login-throttle:
       max-attempts: ${LOGIN_THROTTLE_MAX_ATTEMPTS:5}
       window-seconds: ${LOGIN_THROTTLE_WINDOW_SECONDS:300}

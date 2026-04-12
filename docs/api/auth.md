@@ -37,7 +37,7 @@ Error response:
 
 ## `POST /api/v1/auth/register`
 
-학습자 또는 교수자 계정을 생성한다. MVP에서는 학습자 공개 회원가입, 교수자 계정은 관리자 생성으로 제한할 수 있다.
+학습자 또는 교수자 계정을 생성한다. 현재 공개 회원가입은 `STUDENT`, `INSTRUCTOR`를 허용하고 `ADMIN`은 직접 생성할 수 없다.
 
 Request:
 

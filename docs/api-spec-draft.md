@@ -67,7 +67,7 @@ POST /api/v1/auth/register
 설명
 
 학습자 또는 교수자 계정을 생성한다.
-MVP에서는 학습자만 공개 회원가입으로 받고, 교수자는 관리자 생성 방식으로 제한해도 된다.
+현재 공개 회원가입은 `STUDENT`, `INSTRUCTOR`를 허용하고 `ADMIN`은 직접 생성할 수 없다.
 
 Request
 
