@@ -42,17 +42,17 @@ app:
       bucket: ${S3_BUCKET:}
       access-key: ${S3_ACCESS_KEY:}
       secret-key: ${S3_SECRET_KEY:}
-      upload-prefix: ${S3_UPLOAD_PREFIX:course-videos}
+      upload-prefix: ${S3_UPLOAD_PREFIX:videos}
       public-base-url: ${S3_PUBLIC_BASE_URL:}
       presign-expiration-seconds: ${S3_PRESIGN_EXPIRATION_SECONDS:900}
   ai:
     risk-analysis:
       enabled: ${AI_RISK_ANALYSIS_ENABLED:false}
-      base-url: ${AI_API_BASE_URL:https://api.openai.com/v1}
-      api-key: ${AI_API_KEY:}
-      model: ${AI_MODEL:gpt-4.1-mini}
-      temperature: ${AI_TEMPERATURE:0.2}
-      timeout-seconds: ${AI_TIMEOUT_SECONDS:20}
+      base-url: ${AI_RISK_ANALYSIS_BASE_URL:https://api.openai.com/v1}
+      api-key: ${AI_RISK_ANALYSIS_API_KEY:}
+      model: ${AI_RISK_ANALYSIS_MODEL:gpt-4.1-mini}
+      temperature: ${AI_RISK_ANALYSIS_TEMPERATURE:0.2}
+      timeout-seconds: ${AI_RISK_ANALYSIS_TIMEOUT_SECONDS:20}
 
 springdoc:
   swagger-ui:
