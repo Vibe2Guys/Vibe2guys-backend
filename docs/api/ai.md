@@ -12,6 +12,8 @@
 ### `POST /api/v1/ai/follow-up-questions`
 
 강의 내용, 퀴즈 답변, 과제 답변을 바탕으로 후속 질문을 생성한다.
+`contentId`가 있으면 해당 강의 콘텐츠 제목/설명을 우선 사용하고, `sourceText`는 선택 입력으로 취급한다.
+즉 꼬리질문은 "강의를 듣고 방금 학습한 내용"을 기준으로 만드는 것이 기본 동작이다.
 
 Request:
 
@@ -20,8 +22,8 @@ Request:
   "courseId": 101,
   "contentId": 5001,
   "studentId": 1,
-  "contextType": "QUIZ",
-  "sourceText": "AI는 데이터를 학습하여 문제를 해결한다."
+  "contextType": "CONTENT",
+  "sourceText": ""
 }
 ```
 
@@ -68,3 +70,4 @@ Response:
 - 핵심 LMS 흐름은 AI 실패와 무관하게 정상 동작해야 한다.
 - LLM 호출 결과는 사용자 응답에 바로 노출하기 전에 기본 검증과 후처리를 거친다.
 - 학생 위험도 평가는 외부 LLM으로 위임할 수 있지만, 실패 시 규칙 기반 분석으로 즉시 fallback 해야 한다.
+- 꼬리질문 자체는 강의/콘텐츠 문맥 기반 규칙 엔진으로 생성하며, 외부 LLM이 없어도 동작한다.

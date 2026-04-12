@@ -48,17 +48,70 @@ public class TeamMember extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private TeamMemberStatus status;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "learning_style", nullable = false, length = 30)
+    private TeamLearningStyle learningStyle;
+
+    @Column(name = "reliability_score", nullable = false)
+    private int reliabilityScore;
+
+    @Column(name = "initiative_score", nullable = false)
+    private int initiativeScore;
+
+    @Column(name = "support_score", nullable = false)
+    private int supportScore;
+
+    @Column(name = "understanding_score", nullable = false)
+    private int understandingScore;
+
+    @Column(name = "profile_summary", length = 300)
+    private String profileSummary;
+
     @Builder
-    private TeamMember(Team team, User user, OffsetDateTime joinedAt, OffsetDateTime leftAt, TeamMemberStatus status) {
+    private TeamMember(
+            Team team,
+            User user,
+            OffsetDateTime joinedAt,
+            OffsetDateTime leftAt,
+            TeamMemberStatus status,
+            TeamLearningStyle learningStyle,
+            int reliabilityScore,
+            int initiativeScore,
+            int supportScore,
+            int understandingScore,
+            String profileSummary
+    ) {
         this.team = team;
         this.user = user;
         this.joinedAt = joinedAt;
         this.leftAt = leftAt;
         this.status = status;
+        this.learningStyle = learningStyle;
+        this.reliabilityScore = reliabilityScore;
+        this.initiativeScore = initiativeScore;
+        this.supportScore = supportScore;
+        this.understandingScore = understandingScore;
+        this.profileSummary = profileSummary;
     }
 
     public void remove(OffsetDateTime leftAt) {
         this.leftAt = leftAt;
         this.status = TeamMemberStatus.REMOVED;
+    }
+
+    public void applyProfile(
+            TeamLearningStyle learningStyle,
+            int reliabilityScore,
+            int initiativeScore,
+            int supportScore,
+            int understandingScore,
+            String profileSummary
+    ) {
+        this.learningStyle = learningStyle;
+        this.reliabilityScore = reliabilityScore;
+        this.initiativeScore = initiativeScore;
+        this.supportScore = supportScore;
+        this.understandingScore = understandingScore;
+        this.profileSummary = profileSummary;
     }
 }

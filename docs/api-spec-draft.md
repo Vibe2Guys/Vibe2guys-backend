@@ -1108,6 +1108,7 @@ POST /api/v1/ai/follow-up-questions
 설명
 
 강의 내용, 퀴즈 답변, 과제 답변을 바탕으로 후속 질문을 생성한다.
+`contentId`가 있으면 해당 강의 콘텐츠 제목/설명을 우선 문맥으로 사용하고 `sourceText`는 선택 입력이다.
 
 Request
 
@@ -1115,8 +1116,8 @@ Request
   "courseId": 101,
   "contentId": 5001,
   "studentId": 1,
-  "contextType": "QUIZ",
-  "sourceText": "AI는 데이터를 학습하여 문제를 해결한다."
+  "contextType": "CONTENT",
+  "sourceText": ""
 }
 
 Response
@@ -1503,7 +1504,7 @@ POST /api/v1/courses/{courseId}/teams/auto-grouping
 
 설명
 
-수강생을 자동으로 팀 배정한다.
+수강생을 학습 스타일 기반으로 자동 팀 배정한다.
 
 Request
 
@@ -1517,7 +1518,18 @@ Response
   "success": true,
   "message": "팀 자동 배정 완료",
   "data": {
-    "teamCount": 10
+    "teamCount": 10,
+    "groupingBasis": "LEARNING_STYLE_BALANCED",
+    "teams": [
+      {
+        "teamId": 3001,
+        "name": "Team 1",
+        "memberCount": 4,
+        "status": "ACTIVE",
+        "teamBuildingScore": 82,
+        "matchingSummary": "추진형과 분석형을 섞어 실행력과 개념 정교화를 같이 노렸습니다."
+      }
+    ]
   }
 }
 
@@ -1538,9 +1550,11 @@ Response
   "data": [
     {
       "teamId": 3001,
-      "teamName": "1팀",
+      "name": "1팀",
       "memberCount": 4,
-      "collaborationScore": 72
+      "status": "ACTIVE",
+      "teamBuildingScore": 82,
+      "matchingSummary": "추진형과 분석형을 섞어 실행력과 개념 정교화를 같이 노렸습니다."
     }
   ]
 }
@@ -1592,12 +1606,20 @@ Response
   "message": "팀 상세 조회 성공",
   "data": {
     "teamId": 3001,
-    "teamName": "1팀",
+    "name": "1팀",
+    "teamBuildingScore": 82,
+    "profileDiversityScore": 79,
+    "matchingSummary": "추진형, 분석형, 조율형을 함께 배치해 실행력과 의사결정 균형을 노렸습니다.",
     "members": [
       {
         "userId": 1,
         "name": "홍길동",
-        "contributionScore": 50
+        "learningStyle": "DRIVER",
+        "reliabilityScore": 74,
+        "initiativeScore": 88,
+        "supportScore": 63,
+        "understandingScore": 70,
+        "profileSummary": "실행 속도가 빠르고 먼저 논의를 이끄는 편입니다."
       }
     ],
     "collaborationScore": 72,
@@ -1629,9 +1651,10 @@ Response
 
 {
   "success": true,
-  "message": "팀원 수정 완료",
+  "message": "팀원 재배치 완료",
   "data": {
-    "teamId": 3001
+    "teamId": 3001,
+    "teamBuildingScore": 78
   }
 }
 
@@ -1742,11 +1765,26 @@ Response
   "success": true,
   "message": "팀 협업 분석 조회 성공",
   "data": {
-    "teamId": 3001,
+    "teamBuildingScore": 82,
+    "profileDiversityScore": 79,
+    "matchingSummary": "추진형, 분석형, 조율형을 함께 배치해 실행력과 의사결정 균형을 노렸습니다.",
     "collaborationScore": 72,
     "conversationBalanceScore": 60,
     "inactiveMemberCount": 1,
     "dominantMemberCount": 1,
+    "strengthSignals": [
+      "서로 다른 학습 스타일이 섞여 있어 역할 분담 가능성이 높습니다."
+    ],
+    "styleDistributions": [
+      {
+        "style": "DRIVER",
+        "memberCount": 1
+      },
+      {
+        "style": "ANALYST",
+        "memberCount": 1
+      }
+    ],
     "riskSignals": [
       "특정 학생 참여율 낮음",
       "응답 편중 현상"
@@ -1772,9 +1810,9 @@ Response
     {
       "userId": 1,
       "name": "홍길동",
+      "learningStyle": "DRIVER",
+      "reliabilityScore": 74,
       "messageCount": 12,
-      "feedbackCount": 3,
-      "taskContributionScore": 65,
       "contributionScore": 58
     }
   ]

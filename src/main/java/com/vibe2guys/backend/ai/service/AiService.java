@@ -61,7 +61,7 @@ public class AiService {
 
         validateQuestionCreateAccess(requester, student, course, content);
 
-        String normalizedSource = request.sourceText().trim();
+        String normalizedSource = resolveFollowUpSource(course, content, request.sourceText());
         FollowUpDifficultyLevel difficultyLevel = inferDifficulty(normalizedSource);
         String questionText = generateQuestion(request.contextType(), normalizedSource, difficultyLevel);
 
@@ -149,6 +149,23 @@ public class AiService {
         throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "꼬리질문 생성 권한이 없습니다.");
     }
 
+    private String resolveFollowUpSource(Course course, Content content, String sourceText) {
+        if (sourceText != null && !sourceText.trim().isBlank()) {
+            return sourceText.trim();
+        }
+        if (content != null) {
+            String description = content.getDescription() == null ? "" : content.getDescription().trim();
+            if (!description.isBlank()) {
+                return "강의 콘텐츠 제목: " + content.getTitle() + "\n학습 핵심: " + description;
+            }
+            return "강의 콘텐츠 제목: " + content.getTitle() + "\n강의 유형: " + content.getType().name();
+        }
+        if (course.getDescription() != null && !course.getDescription().trim().isBlank()) {
+            return "강의 제목: " + course.getTitle() + "\n강의 소개: " + course.getDescription().trim();
+        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT, "꼬리질문 생성을 위해 contentId 또는 sourceText가 필요합니다.");
+    }
+
     private void validateAnalysisAccess(User requester, AiFollowUpQuestion question) {
         if (requester.getRole() == UserRole.ADMIN) {
             return;
@@ -186,11 +203,11 @@ public class AiService {
     private String generateQuestion(FollowUpContextType contextType, String sourceText, FollowUpDifficultyLevel difficultyLevel) {
         String seed = extractSeed(sourceText);
         return switch (contextType) {
-            case CONTENT -> "방금 학습한 \"" + seed + "\" 개념을 실제 사례에 적용하면 어떤 결과가 나올까요?";
+            case CONTENT -> "방금 들은 강의의 \"" + seed + "\" 내용을 바탕으로 실제 사례를 하나 설명해볼 수 있나요?";
             case QUIZ -> difficultyLevel == FollowUpDifficultyLevel.HARD
-                    ? "\"" + seed + "\" 답변을 더 일반화하면 어떤 조건에서도 성립할 수 있을까요?"
-                    : "\"" + seed + "\"와 관련해 왜 그런 선택을 했는지 설명해볼 수 있나요?";
-            case ASSIGNMENT -> "작성한 내용 중 \"" + seed + "\" 부분을 이전 개념과 연결해서 다시 설명해볼 수 있나요?";
+                    ? "이번 강의에서 다룬 \"" + seed + "\" 답변을 더 일반화하면 어떤 조건에서도 성립할 수 있을까요?"
+                    : "이번 강의 내용 중 \"" + seed + "\"와 연결해서 왜 그런 선택을 했는지 설명해볼 수 있나요?";
+            case ASSIGNMENT -> "이번 강의에서 배운 개념을 기준으로 \"" + seed + "\" 부분을 다시 설명해볼 수 있나요?";
         };
     }
 

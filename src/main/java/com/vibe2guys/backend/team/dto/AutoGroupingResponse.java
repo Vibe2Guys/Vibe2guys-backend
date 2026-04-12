@@ -4,6 +4,7 @@ import java.util.List;
 
 public record AutoGroupingResponse(
         int teamCount,
+        String groupingBasis,
         List<TeamListItemResponse> teams
 ) {
 }

@@ -39,14 +39,39 @@ public class Team extends BaseTimeEntity {
     @Column(nullable = false, length = 20)
     private TeamStatus status;
 
+    @Column(name = "team_building_score", nullable = false)
+    private int teamBuildingScore;
+
+    @Column(name = "profile_diversity_score", nullable = false)
+    private int profileDiversityScore;
+
+    @Column(name = "matching_summary", length = 500)
+    private String matchingSummary;
+
     @Builder
-    private Team(Course course, String name, TeamStatus status) {
+    private Team(
+            Course course,
+            String name,
+            TeamStatus status,
+            int teamBuildingScore,
+            int profileDiversityScore,
+            String matchingSummary
+    ) {
         this.course = course;
         this.name = name;
         this.status = status;
+        this.teamBuildingScore = teamBuildingScore;
+        this.profileDiversityScore = profileDiversityScore;
+        this.matchingSummary = matchingSummary;
     }
 
     public void reconfigured() {
         this.status = TeamStatus.RECONFIGURED;
+    }
+
+    public void updateMatching(int teamBuildingScore, int profileDiversityScore, String matchingSummary) {
+        this.teamBuildingScore = teamBuildingScore;
+        this.profileDiversityScore = profileDiversityScore;
+        this.matchingSummary = matchingSummary;
     }
 }
