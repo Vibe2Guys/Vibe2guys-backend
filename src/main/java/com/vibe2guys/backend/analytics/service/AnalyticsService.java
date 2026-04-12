@@ -52,6 +52,11 @@ import com.vibe2guys.backend.quiz.domain.Quiz;
 import com.vibe2guys.backend.quiz.domain.QuizSubmission;
 import com.vibe2guys.backend.quiz.repository.QuizRepository;
 import com.vibe2guys.backend.quiz.repository.QuizSubmissionRepository;
+import com.vibe2guys.backend.team.domain.TeamChatMessage;
+import com.vibe2guys.backend.team.domain.TeamMember;
+import com.vibe2guys.backend.team.domain.TeamMemberStatus;
+import com.vibe2guys.backend.team.repository.TeamChatMessageRepository;
+import com.vibe2guys.backend.team.repository.TeamMemberRepository;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -88,6 +93,8 @@ public class AnalyticsService {
     private final AssignmentSubmissionRepository assignmentSubmissionRepository;
     private final QuizRepository quizRepository;
     private final QuizSubmissionRepository quizSubmissionRepository;
+    private final TeamMemberRepository teamMemberRepository;
+    private final TeamChatMessageRepository teamChatMessageRepository;
     private final UserService userService;
     private final AiRiskAnalysisService aiRiskAnalysisService;
 
@@ -491,35 +498,81 @@ public class AnalyticsService {
             }
         }
         int assignmentSubmitRate = assignments.isEmpty() ? 100 : clamp((submittedAssignments * 100) / assignments.size());
+        int onTimeSubmissionRate = calculateOnTimeSubmissionRate(assignments, student.getId());
 
-        int diligenceScore = averageScore(List.of(attendanceRate, progressCoverage, assignmentSubmitRate));
+        int diligenceScore = averageScore(List.of(attendanceRate, progressCoverage, assignmentSubmitRate, onTimeSubmissionRate));
 
         List<Integer> quizScores = new ArrayList<>();
         for (Quiz quiz : quizzes) {
             quizSubmissionRepository.findByQuizIdAndStudentId(quiz.getId(), student.getId())
                     .ifPresent(submission -> quizScores.add(submission.getTotalScore()));
         }
-        int understandingScore = quizScores.isEmpty() ? Math.max(averageProgressRate, 40) : averageScore(quizScores);
-        int engagementScore = averageScore(List.of(averageProgressRate, attendanceRate));
-        int collaborationScore = 50;
+        int totalReplayCount = progressSummaries.stream().mapToInt(ContentProgressSummary::getReplayCount).sum();
+        int repeatedWatchSignal = progressSummaries.isEmpty()
+                ? 0
+                : clamp((int) Math.round((double) totalReplayCount * 100 / Math.max(progressSummaries.size() * 3, 1)));
+        int stalledContentRate = progressSummaries.isEmpty()
+                ? 0
+                : clamp((int) Math.round(progressSummaries.stream()
+                .filter(summary -> !summary.isCompleted() && summary.getReplayCount() >= 2 && summary.getProgressRate() < 80)
+                .count() * 100.0 / progressSummaries.size()));
+        int averageExitRate = progressSummaries.isEmpty()
+                ? 0
+                : clamp((int) Math.round(progressSummaries.stream()
+                .filter(summary -> summary.getTotalSeconds() > 0)
+                .mapToDouble(summary -> Math.max(0, summary.getTotalSeconds() - summary.getLastPositionSeconds()) * 100.0 / summary.getTotalSeconds())
+                .average()
+                .orElse(0)));
+        int understandingEstimateScore = clamp(100 - (stalledContentRate / 2) - (repeatedWatchSignal / 4) - (averageExitRate / 4));
+        int understandingScore = quizScores.isEmpty()
+                ? averageScore(List.of(Math.max(averageProgressRate, 40), understandingEstimateScore))
+                : averageScore(List.of(averageScore(quizScores), understandingEstimateScore));
+        InteractionMetrics interactionMetrics = calculateInteractionMetrics(course.getId(), student.getId());
+        int immersionScore = averageScore(List.of(attendanceRate, averageProgressRate, interactionMetrics.interactionFrequencyScore()));
+        int engagementScore = immersionScore;
+        int collaborationScore = interactionMetrics.collaborationContributionScore();
 
         int weightedHealthScore = clamp((int) Math.round(
-                (attendanceRate * analyticsConfig.getAttendanceWeight())
+                (immersionScore * analyticsConfig.getAttendanceWeight())
                         + (progressCoverage * analyticsConfig.getProgressWeight())
-                        + (assignmentSubmitRate * analyticsConfig.getAssignmentWeight())
+                        + (diligenceScore * analyticsConfig.getAssignmentWeight())
                         + (understandingScore * analyticsConfig.getQuizWeight())
                         + (collaborationScore * analyticsConfig.getTeamActivityWeight())
         ));
         int riskScore = clamp(100 - weightedHealthScore);
         RiskLevel riskLevel = resolveRiskLevel(riskScore, analyticsConfig);
-        List<String> reasons = buildReasons(attendanceRate, assignmentSubmitRate, understandingScore, progressCoverage);
+        List<String> reasons = buildReasons(
+                immersionScore,
+                understandingScore,
+                diligenceScore,
+                collaborationScore,
+                stalledContentRate,
+                repeatedWatchSignal,
+                interactionMetrics.interactionDropSignal()
+        );
         Map<String, Object> evidenceWindow = new HashMap<>();
         evidenceWindow.put("snapshotDate", snapshotDate.toString());
         evidenceWindow.put("attendanceRate", attendanceRate);
         evidenceWindow.put("progressRate", progressCoverage);
         evidenceWindow.put("assignmentSubmitRate", assignmentSubmitRate);
+        evidenceWindow.put("onTimeSubmissionRate", onTimeSubmissionRate);
+        evidenceWindow.put("immersionScore", immersionScore);
+        evidenceWindow.put("understandingEstimateScore", understandingEstimateScore);
+        evidenceWindow.put("sincerityScore", diligenceScore);
+        evidenceWindow.put("collaborationContributionScore", collaborationScore);
+        evidenceWindow.put("repeatWatchSignal", repeatedWatchSignal);
+        evidenceWindow.put("stalledContentRate", stalledContentRate);
+        evidenceWindow.put("averageExitRate", averageExitRate);
+        evidenceWindow.put("interactionFrequencyScore", interactionMetrics.interactionFrequencyScore());
+        evidenceWindow.put("interactionDropSignal", interactionMetrics.interactionDropSignal());
         String coachingMessage = buildCoachingMessage(riskLevel, reasons);
-        List<String> recommendations = buildRecommendations(riskScore, understandingScore, diligenceScore);
+        List<String> recommendations = buildRecommendations(
+                riskScore,
+                understandingScore,
+                diligenceScore,
+                immersionScore,
+                collaborationScore
+        );
 
         Map<String, Object> aiInput = new HashMap<>();
         aiInput.put("studentId", student.getId());
@@ -527,9 +580,19 @@ public class AnalyticsService {
         aiInput.put("courseId", course.getId());
         aiInput.put("courseTitle", course.getTitle());
         aiInput.put("snapshotDate", snapshotDate.toString());
+        aiInput.put("immersionScore", immersionScore);
+        aiInput.put("understandingEstimateScore", understandingEstimateScore);
+        aiInput.put("sincerityScore", diligenceScore);
+        aiInput.put("collaborationContributionScore", collaborationScore);
         aiInput.put("attendanceRate", attendanceRate);
         aiInput.put("progressRate", progressCoverage);
         aiInput.put("assignmentSubmitRate", assignmentSubmitRate);
+        aiInput.put("onTimeSubmissionRate", onTimeSubmissionRate);
+        aiInput.put("repeatWatchSignal", repeatedWatchSignal);
+        aiInput.put("stalledContentRate", stalledContentRate);
+        aiInput.put("averageExitRate", averageExitRate);
+        aiInput.put("interactionFrequencyScore", interactionMetrics.interactionFrequencyScore());
+        aiInput.put("interactionDropSignal", interactionMetrics.interactionDropSignal());
         aiInput.put("understandingScore", understandingScore);
         aiInput.put("engagementScore", engagementScore);
         aiInput.put("collaborationScore", collaborationScore);
@@ -639,7 +702,13 @@ public class AnalyticsService {
         return recommendations;
     }
 
-    private List<String> buildRecommendations(int riskScore, int understandingScore, int diligenceScore) {
+    private List<String> buildRecommendations(
+            int riskScore,
+            int understandingScore,
+            int diligenceScore,
+            int immersionScore,
+            int collaborationScore
+    ) {
         List<String> recommendations = new ArrayList<>();
         if (riskScore >= 70) {
             recommendations.add("이번 주에는 가장 진도가 낮은 강의부터 복습하세요.");
@@ -649,6 +718,12 @@ public class AnalyticsService {
         }
         if (diligenceScore < 70) {
             recommendations.add("출석과 과제 제출 일정을 먼저 점검하세요.");
+        }
+        if (immersionScore < 60) {
+            recommendations.add("실시간 강의에서는 질문이나 반응을 남겨 몰입 흐름을 회복하세요.");
+        }
+        if (collaborationScore < 50) {
+            recommendations.add("팀 채팅에 현재 진행 상황을 먼저 공유해 협업 기여도를 높이세요.");
         }
         if (recommendations.isEmpty()) {
             recommendations.add("현재 학습 리듬을 유지하면서 다음 강의도 미리 확인해보세요.");
@@ -666,19 +741,33 @@ public class AnalyticsService {
         return RiskLevel.LOW;
     }
 
-    private List<String> buildReasons(int attendanceRate, int assignmentSubmitRate, int understandingScore, int progressRate) {
+    private List<String> buildReasons(
+            int immersionScore,
+            int understandingScore,
+            int diligenceScore,
+            int collaborationScore,
+            int stalledContentRate,
+            int repeatedWatchSignal,
+            int interactionDropSignal
+    ) {
         List<String> reasons = new ArrayList<>();
-        if (attendanceRate < 70) {
-            reasons.add("출석률이 낮습니다.");
-        }
-        if (assignmentSubmitRate < 70) {
-            reasons.add("과제 제출률이 낮습니다.");
+        if (immersionScore < 60) {
+            reasons.add("강의 체류와 상호작용 흐름이 전반적으로 낮습니다.");
         }
         if (understandingScore < 60) {
-            reasons.add("퀴즈 또는 이해도 점수가 낮습니다.");
+            reasons.add("반복 시청과 이탈 패턴상 이해도 저하 신호가 보입니다.");
         }
-        if (progressRate < 70) {
-            reasons.add("진도율이 낮습니다.");
+        if (diligenceScore < 70) {
+            reasons.add("과제 제출과 학습 일정 준수 패턴이 불안정합니다.");
+        }
+        if (collaborationScore < 50) {
+            reasons.add("팀 내 협업 기여도가 낮거나 대화 편중이 큽니다.");
+        }
+        if (stalledContentRate >= 40 && repeatedWatchSignal >= 40) {
+            reasons.add("반복 시청 증가와 진도 정체가 동시에 나타납니다.");
+        }
+        if (interactionDropSignal >= 50) {
+            reasons.add("상호작용 감소 패턴이 누적되고 있습니다.");
         }
         if (reasons.isEmpty()) {
             reasons.add("전반적인 학습 상태가 안정적입니다.");
@@ -704,6 +793,51 @@ public class AnalyticsService {
 
     private int clamp(int score) {
         return Math.max(0, Math.min(100, score));
+    }
+
+    private int calculateOnTimeSubmissionRate(List<Assignment> assignments, Long studentId) {
+        if (assignments.isEmpty()) {
+            return 100;
+        }
+        int onTimeCount = 0;
+        for (Assignment assignment : assignments) {
+            if (assignmentSubmissionRepository.findByAssignmentIdAndStudentId(assignment.getId(), studentId)
+                    .filter(submission -> !submission.getSubmittedAt().isAfter(assignment.getDueAt()))
+                    .isPresent()) {
+                onTimeCount++;
+            }
+        }
+        return clamp((onTimeCount * 100) / assignments.size());
+    }
+
+    private InteractionMetrics calculateInteractionMetrics(Long courseId, Long studentId) {
+        List<TeamMember> memberships = teamMemberRepository.findByTeamCourseIdAndUserIdAndStatus(
+                courseId,
+                studentId,
+                TeamMemberStatus.ACTIVE
+        );
+        if (memberships.isEmpty()) {
+            return new InteractionMetrics(40, 40, 60);
+        }
+
+        int myMessages = 0;
+        int totalMessages = 0;
+        for (TeamMember membership : memberships) {
+            List<TeamChatMessage> messages = teamChatMessageRepository.findByTeamIdOrderBySentAtAsc(membership.getTeam().getId());
+            totalMessages += messages.size();
+            myMessages += (int) messages.stream()
+                    .filter(message -> message.getSender().getId().equals(studentId))
+                    .count();
+        }
+
+        int interactionFrequencyScore = clamp(Math.min(myMessages * 20, 100));
+        int collaborationContributionScore = totalMessages == 0 ? 40 : clamp((myMessages * 100) / totalMessages);
+        int interactionDropSignal = totalMessages == 0 ? 60 : clamp(100 - interactionFrequencyScore);
+        return new InteractionMetrics(
+                interactionFrequencyScore,
+                collaborationContributionScore,
+                interactionDropSignal
+        );
     }
 
     private AnalyticsConfig getAnalyticsConfig() {
@@ -777,6 +911,13 @@ public class AnalyticsService {
             String coachingMessage,
             int assignmentSubmitRate,
             List<String> recommendations
+    ) {
+    }
+
+    private record InteractionMetrics(
+            int interactionFrequencyScore,
+            int collaborationContributionScore,
+            int interactionDropSignal
     ) {
     }
 }
