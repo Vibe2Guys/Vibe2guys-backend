@@ -51,6 +51,12 @@ STUDENT
 INSTRUCTOR
 ADMIN
 
+AI 위험도 분석
+
+- 기존 학생/교수자 분석 API의 응답 형식은 유지한다.
+- 내부 계산 단계에서 외부 AI를 호출해 `riskScore`, `riskLevel`, `reasons`, `coachingMessage`, `recommendations`를 보정할 수 있다.
+- AI 호출 실패, 시간 초과, 잘못된 응답 시에는 규칙 기반 분석 결과로 자동 fallback 한다.
+
 
 ⸻
 
@@ -255,6 +261,40 @@ Response
     "size": 10,
     "totalElements": 1,
     "totalPages": 1
+  }
+}
+
+
+⸻
+
+2-3. 비디오 업로드 URL 발급
+
+주소
+
+POST /api/v1/uploads/videos/presigned-url
+
+설명
+
+교수자 또는 관리자가 S3 presigned PUT URL을 발급받는다.
+프론트는 반환된 `uploadUrl`로 파일을 직접 업로드하고, `fileUrl`을 콘텐츠 `videoUrl`로 저장한다.
+
+Request
+
+{
+  "fileName": "week1-intro.mp4",
+  "contentType": "video/mp4"
+}
+
+Response
+
+{
+  "success": true,
+  "message": "비디오 업로드 URL 생성 완료",
+  "data": {
+    "uploadUrl": "https://bucket.s3.ap-northeast-2.amazonaws.com/...",
+    "fileUrl": "https://bucket.s3.ap-northeast-2.amazonaws.com/videos/20260412/42/...",
+    "objectKey": "videos/20260412/42/uuid-week1-intro.mp4",
+    "expiresInSeconds": 900
   }
 }
 

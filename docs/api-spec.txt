@@ -1,0 +1,69 @@
+Vibe2Guys API additions
+Date: 2026-04-12
+
+1. Instructor video upload
+- Endpoint: POST /api/v1/uploads/videos/presigned-url
+- Auth: Bearer token required
+- Roles: INSTRUCTOR, ADMIN
+- Request JSON:
+  {
+    "fileName": "week1-intro.mp4",
+    "contentType": "video/mp4"
+  }
+- Response JSON:
+  {
+    "success": true,
+    "message": "비디오 업로드 URL 생성 완료",
+    "data": {
+      "uploadUrl": "...",
+      "fileUrl": "...",
+      "objectKey": "...",
+      "expiresInSeconds": 900
+    }
+  }
+- Supported video MIME types:
+  - video/mp4
+  - video/quicktime
+  - video/webm
+  - video/x-matroska
+- Client flow:
+  - request presigned URL
+  - upload binary to uploadUrl with HTTP PUT
+  - save returned fileUrl as course content videoUrl
+
+2. AI student risk analysis
+- Existing analytics endpoints remain the same.
+- Internal analytics calculation now supports optional AI risk analysis.
+- AI can override:
+  - riskScore
+  - riskLevel
+  - reasons
+  - coachingMessage
+  - recommendations
+- If AI is disabled, misconfigured, times out, or returns invalid data:
+  - backend falls back to rule-based analytics
+  - API response format does not change
+
+3. Required environment variables
+- S3_ENABLED
+- S3_REGION
+- S3_BUCKET
+- S3_ACCESS_KEY
+- S3_SECRET_KEY
+- S3_UPLOAD_PREFIX
+- S3_PUBLIC_BASE_URL
+- S3_PRESIGN_EXPIRATION_SECONDS
+- AI_RISK_ANALYSIS_ENABLED
+- AI_RISK_ANALYSIS_BASE_URL
+- AI_RISK_ANALYSIS_API_KEY
+- AI_RISK_ANALYSIS_MODEL
+- AI_RISK_ANALYSIS_TEMPERATURE
+- AI_RISK_ANALYSIS_TIMEOUT_SECONDS
+
+4. Common error format
+- All new endpoints follow the existing common error response:
+  {
+    "success": false,
+    "message": "에러 메시지",
+    "errorCode": "INVALID_INPUT"
+  }

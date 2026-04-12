@@ -45,7 +45,7 @@ public class OpenApiConfig {
     public GroupedOpenApi learningApi() {
         return GroupedOpenApi.builder()
                 .group("learning")
-                .pathsToMatch("/api/v1/courses/**", "/api/v1/contents/**", "/api/v1/assignments/**", "/api/v1/quizzes/**", "/api/v1/teams/**", "/api/v1/chat-rooms/**")
+                .pathsToMatch("/api/v1/courses/**", "/api/v1/contents/**", "/api/v1/assignments/**", "/api/v1/quizzes/**", "/api/v1/teams/**", "/api/v1/chat-rooms/**", "/api/v1/uploads/**")
                 .build();
     }
 

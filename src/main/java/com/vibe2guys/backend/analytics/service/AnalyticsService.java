@@ -1,6 +1,8 @@
 package com.vibe2guys.backend.analytics.service;
 
 import com.vibe2guys.backend.ai.domain.AiFollowUpAnalysis;
+import com.vibe2guys.backend.ai.service.AiRiskAnalysisService;
+import com.vibe2guys.backend.ai.service.AiRiskAssessment;
 import com.vibe2guys.backend.ai.repository.AiFollowUpAnalysisRepository;
 import com.vibe2guys.backend.admin.domain.AnalyticsConfig;
 import com.vibe2guys.backend.admin.repository.AnalyticsConfigRepository;
@@ -87,6 +89,7 @@ public class AnalyticsService {
     private final QuizRepository quizRepository;
     private final QuizSubmissionRepository quizSubmissionRepository;
     private final UserService userService;
+    private final AiRiskAnalysisService aiRiskAnalysisService;
 
     public StudentScoresResponse getStudentScores(Long studentId, Long requesterId) {
         User requester = userService.getById(requesterId);
@@ -516,6 +519,33 @@ public class AnalyticsService {
         evidenceWindow.put("progressRate", progressCoverage);
         evidenceWindow.put("assignmentSubmitRate", assignmentSubmitRate);
         String coachingMessage = buildCoachingMessage(riskLevel, reasons);
+        List<String> recommendations = buildRecommendations(riskScore, understandingScore, diligenceScore);
+
+        Map<String, Object> aiInput = new HashMap<>();
+        aiInput.put("studentId", student.getId());
+        aiInput.put("studentName", student.getName());
+        aiInput.put("courseId", course.getId());
+        aiInput.put("courseTitle", course.getTitle());
+        aiInput.put("snapshotDate", snapshotDate.toString());
+        aiInput.put("attendanceRate", attendanceRate);
+        aiInput.put("progressRate", progressCoverage);
+        aiInput.put("assignmentSubmitRate", assignmentSubmitRate);
+        aiInput.put("understandingScore", understandingScore);
+        aiInput.put("engagementScore", engagementScore);
+        aiInput.put("collaborationScore", collaborationScore);
+        aiInput.put("ruleBasedRiskScore", riskScore);
+        aiInput.put("ruleBasedRiskLevel", riskLevel.name());
+        aiInput.put("ruleBasedReasons", reasons);
+        AiRiskAssessment aiRiskAssessment = aiRiskAnalysisService.assessStudentRisk(aiInput);
+        if (aiRiskAssessment != null) {
+            riskScore = aiRiskAssessment.riskScore();
+            riskLevel = aiRiskAssessment.riskLevel();
+            reasons = aiRiskAssessment.reasons().isEmpty() ? reasons : aiRiskAssessment.reasons();
+            coachingMessage = aiRiskAssessment.coachingMessage();
+            recommendations = aiRiskAssessment.recommendations().isEmpty() ? recommendations : aiRiskAssessment.recommendations();
+            evidenceWindow.put("aiRiskAssessmentEnabled", true);
+        }
+        evidenceWindow.put("aiRecommendations", recommendations);
 
         return new AnalyticsMetrics(
                 diligenceScore,
@@ -527,7 +557,8 @@ public class AnalyticsService {
                 reasons,
                 evidenceWindow,
                 coachingMessage,
-                assignmentSubmitRate
+                assignmentSubmitRate,
+                recommendations
         );
     }
 
@@ -553,7 +584,7 @@ public class AnalyticsService {
                 .riskLevel(riskLevel)
                 .reasons(base.getReasons())
                 .evidenceWindow(base.getEvidenceWindow())
-                .coachingMessage(buildCoachingMessage(riskLevel, base.getReasons()))
+                .coachingMessage(base.getCoachingMessage())
                 .scoringVersion(SCORING_VERSION)
                 .computedAt(OffsetDateTime.now())
                 .build();
@@ -582,6 +613,16 @@ public class AnalyticsService {
     }
 
     private List<String> buildRecommendations(DailyAnalyticsSnapshot snapshot) {
+        Object aiRecommendations = snapshot.getEvidenceWindow().get("aiRecommendations");
+        if (aiRecommendations instanceof List<?> values) {
+            List<String> result = values.stream()
+                    .map(value -> value == null ? "" : value.toString().trim())
+                    .filter(value -> !value.isBlank())
+                    .toList();
+            if (!result.isEmpty()) {
+                return result;
+            }
+        }
         List<String> recommendations = new ArrayList<>();
         if (snapshot.getDropoutRiskScore() >= 70) {
             recommendations.add("이번 주에는 가장 진도가 낮은 강의부터 복습하세요.");
@@ -590,6 +631,23 @@ public class AnalyticsService {
             recommendations.add("최근 퀴즈에서 틀린 개념을 다시 정리하고 유사 문제를 풀어보세요.");
         }
         if (snapshot.getDiligenceScore() < 70) {
+            recommendations.add("출석과 과제 제출 일정을 먼저 점검하세요.");
+        }
+        if (recommendations.isEmpty()) {
+            recommendations.add("현재 학습 리듬을 유지하면서 다음 강의도 미리 확인해보세요.");
+        }
+        return recommendations;
+    }
+
+    private List<String> buildRecommendations(int riskScore, int understandingScore, int diligenceScore) {
+        List<String> recommendations = new ArrayList<>();
+        if (riskScore >= 70) {
+            recommendations.add("이번 주에는 가장 진도가 낮은 강의부터 복습하세요.");
+        }
+        if (understandingScore < 60) {
+            recommendations.add("최근 퀴즈에서 틀린 개념을 다시 정리하고 유사 문제를 풀어보세요.");
+        }
+        if (diligenceScore < 70) {
             recommendations.add("출석과 과제 제출 일정을 먼저 점검하세요.");
         }
         if (recommendations.isEmpty()) {
@@ -717,7 +775,8 @@ public class AnalyticsService {
             List<String> reasons,
             Map<String, Object> evidenceWindow,
             String coachingMessage,
-            int assignmentSubmitRate
+            int assignmentSubmitRate,
+            List<String> recommendations
     ) {
     }
 }

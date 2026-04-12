@@ -113,8 +113,10 @@ Query Params:
 - `GET /api/v1/courses/{courseId}/weeks/{weekId}/contents`
 - `POST /api/v1/weeks/{weekId}/contents`
 - `GET /api/v1/contents/{contentId}`
+- `POST /api/v1/uploads/videos/presigned-url`
 
 주차와 콘텐츠는 강의 모듈 하위 리소스로 관리한다. 콘텐츠 타입은 MVP에서 `VOD`, `LIVE`, `DOCUMENT`를 지원한다.
+VOD 콘텐츠는 직접 파일을 받지 않고 presigned URL을 발급받아 S3에 업로드한 뒤, 반환된 `fileUrl`을 `videoUrl`로 저장한다.
 
 ## Progress / Tracking APIs
 

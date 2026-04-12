@@ -60,9 +60,11 @@ Response:
 - short-answer analysis
 - intervention recommendation generation
 - concept-link summarization
+- student risk analysis and recommendation generation
 
 ## Backend Notes
 
 - AI 출력은 항상 저장 시각과 입력 문맥을 함께 보관한다.
 - 핵심 LMS 흐름은 AI 실패와 무관하게 정상 동작해야 한다.
 - LLM 호출 결과는 사용자 응답에 바로 노출하기 전에 기본 검증과 후처리를 거친다.
+- 학생 위험도 평가는 외부 LLM으로 위임할 수 있지만, 실패 시 규칙 기반 분석으로 즉시 fallback 해야 한다.
