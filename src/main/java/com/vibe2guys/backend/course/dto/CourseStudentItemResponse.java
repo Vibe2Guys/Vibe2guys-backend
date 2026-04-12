@@ -9,15 +9,35 @@ public record CourseStudentItemResponse(
         String name,
         String email,
         String status,
-        OffsetDateTime enrolledAt
+        OffsetDateTime enrolledAt,
+        int progressRate,
+        int attendanceRate,
+        int understandingScore,
+        String riskLevel,
+        String statusSummary,
+        String memo
 ) {
-    public static CourseStudentItemResponse from(CourseEnrollment enrollment) {
+    public static CourseStudentItemResponse of(
+            CourseEnrollment enrollment,
+            int progressRate,
+            int attendanceRate,
+            int understandingScore,
+            String riskLevel,
+            String statusSummary,
+            String memo
+    ) {
         return new CourseStudentItemResponse(
                 enrollment.getStudent().getId(),
                 enrollment.getStudent().getName(),
                 enrollment.getStudent().getEmail(),
                 enrollment.getStatus().name(),
-                enrollment.getEnrolledAt()
+                enrollment.getEnrolledAt(),
+                progressRate,
+                attendanceRate,
+                understandingScore,
+                riskLevel,
+                statusSummary,
+                memo
         );
     }
 }

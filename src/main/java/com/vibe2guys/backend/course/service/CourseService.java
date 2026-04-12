@@ -8,6 +8,7 @@ import com.vibe2guys.backend.course.domain.Content;
 import com.vibe2guys.backend.course.domain.CourseStatus;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
 import com.vibe2guys.backend.course.domain.CourseInstructor;
+import com.vibe2guys.backend.course.domain.CourseStudentMemo;
 import com.vibe2guys.backend.course.domain.CourseWeek;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.dto.ContentDetailResponse;
@@ -25,14 +26,19 @@ import com.vibe2guys.backend.course.dto.CreateWeekRequest;
 import com.vibe2guys.backend.course.dto.CreateWeekResponse;
 import com.vibe2guys.backend.course.dto.EnrollmentResponse;
 import com.vibe2guys.backend.course.dto.MyCourseItemResponse;
+import com.vibe2guys.backend.course.dto.UpdateCourseStudentMemoRequest;
 import com.vibe2guys.backend.course.dto.UpdateCourseRequest;
 import com.vibe2guys.backend.course.dto.UpdateCourseResponse;
 import com.vibe2guys.backend.course.dto.WeekContentItemResponse;
+import com.vibe2guys.backend.course.repository.CourseStudentMemoRepository;
 import com.vibe2guys.backend.course.repository.ContentRepository;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
 import com.vibe2guys.backend.course.repository.CourseInstructorRepository;
 import com.vibe2guys.backend.course.repository.CourseRepository;
 import com.vibe2guys.backend.course.repository.CourseWeekRepository;
+import com.vibe2guys.backend.analytics.domain.DailyAnalyticsSnapshot;
+import com.vibe2guys.backend.analytics.repository.DailyAnalyticsSnapshotRepository;
+import com.vibe2guys.backend.analytics.domain.RiskLevel;
 import com.vibe2guys.backend.learning.domain.AttendanceSummary;
 import com.vibe2guys.backend.learning.domain.ContentProgressSummary;
 import com.vibe2guys.backend.learning.repository.AttendanceSummaryRepository;
@@ -65,9 +71,11 @@ public class CourseService {
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
     private final CourseWeekRepository courseWeekRepository;
+    private final CourseStudentMemoRepository courseStudentMemoRepository;
     private final ContentRepository contentRepository;
     private final ContentProgressSummaryRepository contentProgressSummaryRepository;
     private final AttendanceSummaryRepository attendanceSummaryRepository;
+    private final DailyAnalyticsSnapshotRepository dailyAnalyticsSnapshotRepository;
     private final UserService userService;
     private final NotificationService notificationService;
 
@@ -195,7 +203,41 @@ public class CourseService {
                 normalizeKeyword(keyword),
                 pageRequest
         );
-        return PageResponse.from(enrollments.map(CourseStudentItemResponse::from));
+        int contentCount = Math.max(contentRepository.findByCourseIdOrderByIdAsc(courseId).size(), 1);
+        List<Long> studentIds = enrollments.getContent().stream().map(item -> item.getStudent().getId()).toList();
+        Map<Long, String> memoByStudentId = new HashMap<>();
+        if (!studentIds.isEmpty()) {
+            for (CourseStudentMemo memo : courseStudentMemoRepository.findByCourseIdAndStudentIdIn(courseId, studentIds)) {
+                memoByStudentId.put(memo.getStudent().getId(), memo.getMemoText());
+            }
+        }
+        return PageResponse.from(enrollments.map(enrollment -> toCourseStudentItemResponse(enrollment, contentCount, memoByStudentId.get(enrollment.getStudent().getId()))));
+    }
+
+    @Transactional
+    public CourseStudentItemResponse updateStudentMemo(
+            Long courseId,
+            Long studentId,
+            Long userId,
+            UpdateCourseStudentMemoRequest request
+    ) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        CourseEnrollment enrollment = courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, studentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 메모를 남길 수 있습니다."));
+        if (enrollment.getStatus() != EnrollmentStatus.ENROLLED) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 메모를 남길 수 있습니다.");
+        }
+
+        CourseStudentMemo memo = courseStudentMemoRepository.findByCourseIdAndStudentId(courseId, studentId)
+                .orElseGet(() -> courseStudentMemoRepository.save(CourseStudentMemo.builder()
+                        .course(course)
+                        .student(enrollment.getStudent())
+                        .memoText(null)
+                        .build()));
+        String normalizedMemo = request.memo() == null ? null : request.memo().trim();
+        memo.updateMemoText(normalizedMemo == null || normalizedMemo.isBlank() ? null : normalizedMemo);
+        return toCourseStudentItemResponse(enrollment, Math.max(contentRepository.findByCourseIdOrderByIdAsc(courseId).size(), 1), memo.getMemoText());
     }
 
     @Transactional
@@ -379,13 +421,13 @@ public class CourseService {
 
     private void validateCreateContentRequest(CreateContentRequest request) {
         if (request.type() == com.vibe2guys.backend.course.domain.ContentType.VOD) {
-            if (request.videoUrl() == null || request.videoUrl().isBlank() || request.durationSeconds() == null || request.durationSeconds() <= 0) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT, "VOD 콘텐츠는 videoUrl과 durationSeconds가 필요합니다.");
+            if (request.videoUrl() == null || request.videoUrl().isBlank()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "동영상 콘텐츠는 영상 파일 업로드가 필요합니다.");
             }
         }
         if (request.type() == com.vibe2guys.backend.course.domain.ContentType.DOCUMENT) {
             if (request.documentUrl() == null || request.documentUrl().isBlank()) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT, "DOCUMENT 콘텐츠는 documentUrl이 필요합니다.");
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "문서 콘텐츠는 문서 파일 업로드가 필요합니다.");
             }
         }
         if (request.type() == com.vibe2guys.backend.course.domain.ContentType.LIVE && request.scheduledAt() == null) {
@@ -406,6 +448,66 @@ public class CourseService {
 
     private String normalizeKeyword(String keyword) {
         return keyword == null ? "" : keyword.trim();
+    }
+
+    private CourseStudentItemResponse toCourseStudentItemResponse(CourseEnrollment enrollment, int contentCount, String memo) {
+        Long courseId = enrollment.getCourse().getId();
+        Long studentId = enrollment.getStudent().getId();
+        List<ContentProgressSummary> progressSummaries = contentProgressSummaryRepository.findByCourseIdAndStudentId(courseId, studentId);
+        List<AttendanceSummary> attendanceSummaries = attendanceSummaryRepository.findByCourseIdAndStudentId(courseId, studentId);
+        int progressRate = progressSummaries.isEmpty()
+                ? 0
+                : averageScore(progressSummaries.stream().map(ContentProgressSummary::getProgressRate).toList());
+        int attendanceRate = clamp(attendanceSummaries.size() * 100 / Math.max(contentCount, 1));
+        DailyAnalyticsSnapshot latestSnapshot = dailyAnalyticsSnapshotRepository
+                .findTopByStudentIdAndCourseIdOrderBySnapshotDateDesc(studentId, courseId)
+                .orElse(null);
+        int understandingScore = latestSnapshot != null ? latestSnapshot.getUnderstandingScore() : progressRate;
+        RiskLevel riskLevel = latestSnapshot != null ? latestSnapshot.getRiskLevel() : resolveRiskLevel(progressRate, attendanceRate);
+        String statusSummary = buildStudentStatusSummary(progressRate, attendanceRate, understandingScore, riskLevel);
+        return CourseStudentItemResponse.of(
+                enrollment,
+                progressRate,
+                attendanceRate,
+                understandingScore,
+                riskLevel.name(),
+                statusSummary,
+                memo
+        );
+    }
+
+    private RiskLevel resolveRiskLevel(int progressRate, int attendanceRate) {
+        if (progressRate < 45 || attendanceRate < 45) {
+            return RiskLevel.HIGH;
+        }
+        if (progressRate < 70 || attendanceRate < 70) {
+            return RiskLevel.MEDIUM;
+        }
+        return RiskLevel.LOW;
+    }
+
+    private String buildStudentStatusSummary(int progressRate, int attendanceRate, int understandingScore, RiskLevel riskLevel) {
+        if (riskLevel == RiskLevel.HIGH || understandingScore < 50) {
+            return "주의 필요";
+        }
+        if (riskLevel == RiskLevel.MEDIUM || progressRate < 75 || attendanceRate < 75) {
+            return "관찰 필요";
+        }
+        return "안정";
+    }
+
+    private int clamp(int value) {
+        return Math.max(0, Math.min(100, value));
+    }
+
+    private int averageScore(List<Integer> scores) {
+        if (scores.isEmpty()) {
+            return 0;
+        }
+        return clamp((int) Math.round(scores.stream()
+                .mapToInt(Integer::intValue)
+                .average()
+                .orElse(0)));
     }
 
     private Map<Long, String> resolveInstructorNames(List<Course> courses) {

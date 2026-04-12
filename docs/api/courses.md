@@ -107,16 +107,58 @@ Query Params:
 - `size`
 - `keyword`
 
+Response:
+
+```json
+{
+  "success": true,
+  "message": "수강생 목록 조회 성공",
+  "data": {
+    "content": [
+      {
+        "userId": 1,
+        "name": "홍길동",
+        "email": "hong@student.com",
+        "status": "ENROLLED",
+        "enrolledAt": "2026-04-10T09:00:00+09:00",
+        "progressRate": 88,
+        "attendanceRate": 92,
+        "understandingScore": 84,
+        "riskLevel": "LOW",
+        "statusSummary": "안정",
+        "memo": "발표 참여가 좋음"
+      }
+    ],
+    "page": 0,
+    "size": 10,
+    "totalElements": 1,
+    "totalPages": 1
+  }
+}
+```
+
+## `PATCH /api/v1/courses/{courseId}/students/{studentId}/memo`
+
+교수자가 특정 수강생에 대한 메모를 저장한다.
+
+Request:
+
+```json
+{
+  "memo": "중간고사 전 보충 자료 안내 예정"
+}
+```
+
 ## Week / Content APIs
 
 - `POST /api/v1/courses/{courseId}/weeks`
 - `GET /api/v1/courses/{courseId}/weeks/{weekId}/contents`
 - `POST /api/v1/weeks/{weekId}/contents`
 - `GET /api/v1/contents/{contentId}`
-- `POST /api/v1/uploads/videos/presigned-url`
+- `POST /api/v1/uploads/presigned-url`
 
 주차와 콘텐츠는 강의 모듈 하위 리소스로 관리한다. 콘텐츠 타입은 MVP에서 `VOD`, `LIVE`, `DOCUMENT`를 지원한다.
-VOD 콘텐츠는 직접 파일을 받지 않고 presigned URL을 발급받아 S3에 업로드한 뒤, 반환된 `fileUrl`을 `videoUrl`로 저장한다.
+VOD / DOCUMENT 콘텐츠는 직접 파일을 받지 않고 presigned URL을 발급받아 S3에 업로드한 뒤, 반환된 `fileUrl`을 각각 `videoUrl`, `documentUrl`로 저장한다.
 
 ## Progress / Tracking APIs
 

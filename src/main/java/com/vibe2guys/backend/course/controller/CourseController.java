@@ -14,6 +14,7 @@ import com.vibe2guys.backend.course.dto.CourseDetailResponse;
 import com.vibe2guys.backend.course.dto.EnrollmentResponse;
 import com.vibe2guys.backend.course.dto.MyCourseItemResponse;
 import com.vibe2guys.backend.course.dto.UpdateCourseRequest;
+import com.vibe2guys.backend.course.dto.UpdateCourseStudentMemoRequest;
 import com.vibe2guys.backend.course.dto.UpdateCourseResponse;
 import com.vibe2guys.backend.course.dto.WeekContentItemResponse;
 import com.vibe2guys.backend.course.service.CourseService;
@@ -106,6 +107,19 @@ public class CourseController {
             @RequestParam(required = false) String keyword
     ) {
         return ApiResponse.success("수강생 목록 조회 성공", courseService.getStudents(courseId, principal.getId(), page, size, keyword));
+    }
+
+    @PatchMapping("/{courseId}/students/{studentId}/memo")
+    public ApiResponse<CourseStudentItemResponse> updateStudentMemo(
+            @PathVariable Long courseId,
+            @PathVariable Long studentId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateCourseStudentMemoRequest request
+    ) {
+        return ApiResponse.success(
+                "수강생 메모 저장 완료",
+                courseService.updateStudentMemo(courseId, studentId, principal.getId(), request)
+        );
     }
 
     @GetMapping("/{courseId}/weeks/{weekId}/contents")

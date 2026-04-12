@@ -455,16 +455,55 @@ Response
       {
         "userId": 1,
         "name": "홍길동",
+        "email": "hong@student.com",
+        "status": "ENROLLED",
+        "enrolledAt": "2026-04-10T09:00:00+09:00",
         "attendanceRate": 80,
         "progressRate": 65,
-        "assignmentSubmitRate": 75,
-        "riskLevel": "MEDIUM"
+        "understandingScore": 72,
+        "riskLevel": "MEDIUM",
+        "statusSummary": "관찰 필요",
+        "memo": "퀴즈 재응시 안내"
       }
     ],
     "page": 0,
     "size": 20,
     "totalElements": 1,
     "totalPages": 1
+  }
+}
+
+
+⸻
+
+2-8. 수강생 메모 저장
+
+주소
+
+PATCH /api/v1/courses/{courseId}/students/{studentId}/memo
+
+Request
+
+{
+  "memo": "중간고사 전 보충 자료 안내 예정"
+}
+
+Response
+
+{
+  "success": true,
+  "message": "수강생 메모 저장 완료",
+  "data": {
+    "userId": 1,
+    "name": "홍길동",
+    "email": "hong@student.com",
+    "status": "ENROLLED",
+    "progressRate": 65,
+    "attendanceRate": 80,
+    "understandingScore": 72,
+    "riskLevel": "MEDIUM",
+    "statusSummary": "관찰 필요",
+    "memo": "중간고사 전 보충 자료 안내 예정"
   }
 }
 
