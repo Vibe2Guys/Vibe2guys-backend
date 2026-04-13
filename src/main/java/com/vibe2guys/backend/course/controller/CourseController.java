@@ -5,6 +5,7 @@ import com.vibe2guys.backend.common.response.PageResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
 import com.vibe2guys.backend.course.dto.CourseAnnouncementResponse;
 import com.vibe2guys.backend.course.dto.CourseGradebookResponse;
+import com.vibe2guys.backend.course.dto.CourseInstructorGradebookResponse;
 import com.vibe2guys.backend.course.dto.CourseLearningLogItemResponse;
 import com.vibe2guys.backend.course.dto.CourseListItemResponse;
 import com.vibe2guys.backend.course.dto.CourseStudentItemResponse;
@@ -183,6 +184,14 @@ public class CourseController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("내 성적 조회 성공", courseService.getMyGradebook(courseId, principal.getId()));
+    }
+
+    @GetMapping("/{courseId}/gradebook/instructor")
+    public ApiResponse<CourseInstructorGradebookResponse> getInstructorGradebook(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("강의 성적부 조회 성공", courseService.getInstructorGradebook(courseId, principal.getId()));
     }
 
 }

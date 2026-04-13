@@ -26,6 +26,8 @@ import com.vibe2guys.backend.course.dto.CourseGradeItemResponse;
 import com.vibe2guys.backend.course.dto.CourseGradebookResponse;
 import com.vibe2guys.backend.course.dto.CourseHomeResponse;
 import com.vibe2guys.backend.course.dto.CourseHomeTodoItemResponse;
+import com.vibe2guys.backend.course.dto.CourseInstructorGradebookResponse;
+import com.vibe2guys.backend.course.dto.CourseInstructorGradebookStudentResponse;
 import com.vibe2guys.backend.course.dto.CourseInstructorSummaryResponse;
 import com.vibe2guys.backend.course.dto.CourseWeekSummaryResponse;
 import com.vibe2guys.backend.course.dto.CreateContentRequest;
@@ -482,6 +484,28 @@ public class CourseService {
         );
     }
 
+    public CourseInstructorGradebookResponse getInstructorGradebook(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        List<CourseEnrollment> enrollments = courseEnrollmentRepository.findByCourseIdAndStatus(courseId, EnrollmentStatus.ENROLLED);
+        List<CourseInstructorGradebookStudentResponse> students = enrollments.stream()
+                .map(enrollment -> buildInstructorGradebookStudent(course, enrollment))
+                .sorted(Comparator.comparing(CourseInstructorGradebookStudentResponse::overallScore).reversed())
+                .toList();
+        return new CourseInstructorGradebookResponse(
+                courseId,
+                course.getTitle(),
+                students.size(),
+                students.isEmpty()
+                        ? 0
+                        : clamp((int) Math.round(students.stream()
+                        .mapToInt(CourseInstructorGradebookStudentResponse::overallScore)
+                        .average()
+                        .orElse(0))),
+                students
+        );
+    }
+
     private List<MyCourseItemResponse> mapStudentCourses(List<CourseEnrollment> enrollments) {
         List<MyCourseItemResponse> responses = new ArrayList<>();
         for (CourseEnrollment enrollment : enrollments) {
@@ -732,6 +756,44 @@ public class CourseService {
             ));
         }
         return items;
+    }
+
+    private CourseInstructorGradebookStudentResponse buildInstructorGradebookStudent(Course course, CourseEnrollment enrollment) {
+        Long studentId = enrollment.getStudent().getId();
+        CourseProgressSnapshot snapshot = buildCourseProgressSnapshot(course.getId(), studentId);
+        List<CourseGradeItemResponse> assignments = buildAssignmentGradeItems(course.getId(), studentId);
+        List<CourseGradeItemResponse> quizzes = buildQuizGradeItems(course.getId(), studentId);
+        int assignmentAverage = averagePercent(assignments);
+        int quizAverage = averagePercent(quizzes);
+        DailyAnalyticsSnapshot latestSnapshot = dailyAnalyticsSnapshotRepository
+                .findTopByStudentIdAndCourseIdOrderBySnapshotDateDesc(studentId, course.getId())
+                .orElse(null);
+        RiskLevel riskLevel = latestSnapshot != null
+                ? latestSnapshot.getRiskLevel()
+                : resolveRiskLevel(snapshot.progressRate(), snapshot.attendanceRate());
+        int overallScore = clamp((int) Math.round(
+                snapshot.attendanceRate() * 0.2
+                        + assignmentAverage * 0.4
+                        + quizAverage * 0.25
+                        + snapshot.progressRate() * 0.15
+        ));
+        return new CourseInstructorGradebookStudentResponse(
+                studentId,
+                enrollment.getStudent().getName(),
+                enrollment.getStudent().getEmail(),
+                snapshot.progressRate(),
+                snapshot.attendanceRate(),
+                assignmentAverage,
+                quizAverage,
+                overallScore,
+                riskLevel.name(),
+                buildStudentStatusSummary(
+                        snapshot.progressRate(),
+                        snapshot.attendanceRate(),
+                        latestSnapshot != null ? latestSnapshot.getUnderstandingScore() : snapshot.progressRate(),
+                        riskLevel
+                )
+        );
     }
 
     private int countPendingAssignments(Long courseId, Long studentId) {

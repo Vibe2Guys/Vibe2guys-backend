@@ -19,26 +19,36 @@ import com.vibe2guys.backend.team.domain.Team;
 import com.vibe2guys.backend.team.domain.TeamChatMessage;
 import com.vibe2guys.backend.team.domain.TeamChatRoom;
 import com.vibe2guys.backend.team.domain.TeamLearningStyle;
+import com.vibe2guys.backend.team.domain.TeamMeetingNote;
 import com.vibe2guys.backend.team.domain.TeamMember;
 import com.vibe2guys.backend.team.domain.TeamMemberStatus;
 import com.vibe2guys.backend.team.domain.TeamStatus;
+import com.vibe2guys.backend.team.domain.TeamTask;
+import com.vibe2guys.backend.team.domain.TeamTaskStatus;
 import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
 import com.vibe2guys.backend.team.dto.ChatRoomResponse;
 import com.vibe2guys.backend.team.dto.CreateTeamChatMessageRequest;
+import com.vibe2guys.backend.team.dto.CreateTeamMeetingNoteRequest;
+import com.vibe2guys.backend.team.dto.CreateTeamTaskRequest;
 import com.vibe2guys.backend.team.dto.TeamAnalyticsResponse;
 import com.vibe2guys.backend.team.dto.TeamChatMessageResponse;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
+import com.vibe2guys.backend.team.dto.TeamMeetingNoteResponse;
 import com.vibe2guys.backend.team.dto.TeamMemberContributionResponse;
 import com.vibe2guys.backend.team.dto.TeamMemberResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
+import com.vibe2guys.backend.team.dto.TeamTaskResponse;
 import com.vibe2guys.backend.team.dto.TeamStyleDistributionResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
+import com.vibe2guys.backend.team.dto.UpdateTeamTaskStatusRequest;
 import com.vibe2guys.backend.team.repository.TeamChatMessageRepository;
 import com.vibe2guys.backend.team.repository.TeamChatRoomRepository;
+import com.vibe2guys.backend.team.repository.TeamMeetingNoteRepository;
 import com.vibe2guys.backend.team.repository.TeamMemberCountView;
 import com.vibe2guys.backend.team.repository.TeamMemberRepository;
 import com.vibe2guys.backend.team.repository.TeamRepository;
+import com.vibe2guys.backend.team.repository.TeamTaskRepository;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -67,6 +77,8 @@ public class TeamService {
     private final TeamMemberRepository teamMemberRepository;
     private final TeamChatRoomRepository teamChatRoomRepository;
     private final TeamChatMessageRepository teamChatMessageRepository;
+    private final TeamTaskRepository teamTaskRepository;
+    private final TeamMeetingNoteRepository teamMeetingNoteRepository;
     private final CourseRepository courseRepository;
     private final CourseEnrollmentRepository courseEnrollmentRepository;
     private final CourseInstructorRepository courseInstructorRepository;
@@ -190,6 +202,65 @@ public class TeamService {
                 collaboration.riskSignals(),
                 members.stream().map(TeamMemberResponse::from).toList()
         );
+    }
+
+    public List<TeamTaskResponse> getTeamTasks(Long teamId, Long userId) {
+        Team team = getAccessibleTeam(teamId, userId);
+        return teamTaskRepository.findByTeamIdOrderByDueAtAscIdAsc(team.getId()).stream()
+                .map(TeamTaskResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public TeamTaskResponse createTeamTask(Long teamId, Long userId, CreateTeamTaskRequest request) {
+        User user = userService.getById(userId);
+        Team team = getAccessibleTeam(teamId, userId);
+        User assignee = request.assigneeUserId() == null ? null : userService.getById(request.assigneeUserId());
+        if (assignee != null) {
+            ensureStudentTeamMember(team.getId(), assignee);
+        }
+        TeamTask task = teamTaskRepository.save(TeamTask.builder()
+                .team(team)
+                .title(request.title().trim())
+                .description(request.description() == null ? null : request.description().trim())
+                .assignee(assignee)
+                .status(TeamTaskStatus.TODO)
+                .dueAt(request.dueAt())
+                .createdBy(user)
+                .build());
+        return TeamTaskResponse.from(task);
+    }
+
+    @Transactional
+    public TeamTaskResponse updateTaskStatus(Long teamId, Long taskId, Long userId, UpdateTeamTaskStatusRequest request) {
+        Team team = getAccessibleTeam(teamId, userId);
+        TeamTask task = teamTaskRepository.findById(taskId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀 업무를 찾을 수 없습니다."));
+        if (!task.getTeam().getId().equals(team.getId())) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "해당 팀의 업무만 변경할 수 있습니다.");
+        }
+        task.updateStatus(request.status());
+        return TeamTaskResponse.from(task);
+    }
+
+    public List<TeamMeetingNoteResponse> getMeetingNotes(Long teamId, Long userId) {
+        Team team = getAccessibleTeam(teamId, userId);
+        return teamMeetingNoteRepository.findByTeamIdOrderByCreatedAtDesc(team.getId()).stream()
+                .map(TeamMeetingNoteResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public TeamMeetingNoteResponse createMeetingNote(Long teamId, Long userId, CreateTeamMeetingNoteRequest request) {
+        User user = userService.getById(userId);
+        Team team = getAccessibleTeam(teamId, userId);
+        TeamMeetingNote note = teamMeetingNoteRepository.save(TeamMeetingNote.builder()
+                .team(team)
+                .title(request.title().trim())
+                .noteBody(request.noteBody().trim())
+                .createdBy(user)
+                .build());
+        return TeamMeetingNoteResponse.from(note);
     }
 
     @Transactional
@@ -379,6 +450,14 @@ public class TeamService {
                 understandingScore,
                 profileSummary
         );
+    }
+
+    private Team getAccessibleTeam(Long teamId, Long userId) {
+        User user = userService.getById(userId);
+        Team team = teamRepository.findById(teamId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_NOT_FOUND, "팀을 찾을 수 없습니다."));
+        validateTeamAccess(team, user);
+        return team;
     }
 
     private TeamLearningStyle resolveLearningStyle(int reliabilityScore, int initiativeScore, int supportScore, int understandingScore) {

@@ -6,12 +6,17 @@ import com.vibe2guys.backend.team.dto.AutoGroupingRequest;
 import com.vibe2guys.backend.team.dto.AutoGroupingResponse;
 import com.vibe2guys.backend.team.dto.ChatRoomResponse;
 import com.vibe2guys.backend.team.dto.CreateTeamChatMessageRequest;
+import com.vibe2guys.backend.team.dto.CreateTeamMeetingNoteRequest;
+import com.vibe2guys.backend.team.dto.CreateTeamTaskRequest;
 import com.vibe2guys.backend.team.dto.TeamAnalyticsResponse;
 import com.vibe2guys.backend.team.dto.TeamListItemResponse;
 import com.vibe2guys.backend.team.dto.TeamChatMessageResponse;
+import com.vibe2guys.backend.team.dto.TeamMeetingNoteResponse;
 import com.vibe2guys.backend.team.dto.TeamMemberContributionResponse;
 import com.vibe2guys.backend.team.dto.TeamResponse;
+import com.vibe2guys.backend.team.dto.TeamTaskResponse;
 import com.vibe2guys.backend.team.dto.UpdateTeamMembersRequest;
+import com.vibe2guys.backend.team.dto.UpdateTeamTaskStatusRequest;
 import com.vibe2guys.backend.team.service.TeamService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -63,6 +68,50 @@ public class TeamController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("팀 상세 조회 성공", teamService.getTeamDetail(teamId, principal.getId()));
+    }
+
+    @GetMapping("/teams/{teamId}/tasks")
+    public ApiResponse<List<TeamTaskResponse>> getTeamTasks(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("팀 업무 목록 조회 성공", teamService.getTeamTasks(teamId, principal.getId()));
+    }
+
+    @PostMapping("/teams/{teamId}/tasks")
+    public ApiResponse<TeamTaskResponse> createTeamTask(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateTeamTaskRequest request
+    ) {
+        return ApiResponse.success("팀 업무 생성 완료", teamService.createTeamTask(teamId, principal.getId(), request));
+    }
+
+    @PatchMapping("/teams/{teamId}/tasks/{taskId}/status")
+    public ApiResponse<TeamTaskResponse> updateTaskStatus(
+            @PathVariable Long teamId,
+            @PathVariable Long taskId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody UpdateTeamTaskStatusRequest request
+    ) {
+        return ApiResponse.success("팀 업무 상태 변경 완료", teamService.updateTaskStatus(teamId, taskId, principal.getId(), request));
+    }
+
+    @GetMapping("/teams/{teamId}/meeting-notes")
+    public ApiResponse<List<TeamMeetingNoteResponse>> getMeetingNotes(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("회의 메모 조회 성공", teamService.getMeetingNotes(teamId, principal.getId()));
+    }
+
+    @PostMapping("/teams/{teamId}/meeting-notes")
+    public ApiResponse<TeamMeetingNoteResponse> createMeetingNote(
+            @PathVariable Long teamId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateTeamMeetingNoteRequest request
+    ) {
+        return ApiResponse.success("회의 메모 저장 완료", teamService.createMeetingNote(teamId, principal.getId(), request));
     }
 
     @PatchMapping("/teams/{teamId}/members")
