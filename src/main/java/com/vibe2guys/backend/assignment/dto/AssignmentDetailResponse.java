@@ -10,6 +10,7 @@ public record AssignmentDetailResponse(
         String description,
         String type,
         OffsetDateTime dueAt,
+        int maxScore,
         boolean teamAssignment,
         AssignmentSubmissionSummaryResponse mySubmission
 ) {
@@ -20,6 +21,7 @@ public record AssignmentDetailResponse(
                 assignment.getDescription(),
                 assignment.getType().name(),
                 assignment.getDueAt(),
+                assignment.getMaxScore(),
                 assignment.isTeamAssignment(),
                 mySubmission
         );

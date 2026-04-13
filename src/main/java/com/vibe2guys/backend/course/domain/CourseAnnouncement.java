@@ -1,12 +1,9 @@
-package com.vibe2guys.backend.assignment.domain;
+package com.vibe2guys.backend.course.domain;
 
 import com.vibe2guys.backend.common.persistence.BaseTimeEntity;
-import com.vibe2guys.backend.course.domain.Course;
 import com.vibe2guys.backend.user.domain.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
@@ -19,13 +16,11 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-import java.time.OffsetDateTime;
-
 @Getter
 @Entity
-@Table(name = "assignments")
+@Table(name = "course_announcements")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Assignment extends BaseTimeEntity {
+public class CourseAnnouncement extends BaseTimeEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,43 +34,27 @@ public class Assignment extends BaseTimeEntity {
     private String title;
 
     @Column(nullable = false, length = 4000)
-    private String description;
+    private String body;
 
-    @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 30)
-    private AssignmentType type;
-
-    @Column(name = "team_assignment", nullable = false)
-    private boolean teamAssignment;
-
-    @Column(name = "due_at", nullable = false)
-    private OffsetDateTime dueAt;
-
-    @Column(name = "max_score", nullable = false)
-    private int maxScore;
+    @Column(name = "is_pinned", nullable = false)
+    private boolean pinned;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "created_by", nullable = false)
     private User createdBy;
 
     @Builder
-    private Assignment(
+    private CourseAnnouncement(
             Course course,
             String title,
-            String description,
-            AssignmentType type,
-            boolean teamAssignment,
-            OffsetDateTime dueAt,
-            int maxScore,
+            String body,
+            boolean pinned,
             User createdBy
     ) {
         this.course = course;
         this.title = title;
-        this.description = description;
-        this.type = type;
-        this.teamAssignment = teamAssignment;
-        this.dueAt = dueAt;
-        this.maxScore = maxScore;
+        this.body = body;
+        this.pinned = pinned;
         this.createdBy = createdBy;
     }
 }

@@ -8,17 +8,30 @@ import java.time.OffsetDateTime;
 public record AssignmentSubmissionSummaryResponse(
         Long submissionId,
         String status,
-        OffsetDateTime submittedAt
+        OffsetDateTime submittedAt,
+        Integer score,
+        String feedback,
+        OffsetDateTime gradedAt
 ) {
     public static AssignmentSubmissionSummaryResponse from(AssignmentSubmission submission) {
         return new AssignmentSubmissionSummaryResponse(
                 submission.getId(),
                 submission.getStatus().name(),
-                submission.getSubmittedAt()
+                submission.getSubmittedAt(),
+                submission.getScore(),
+                submission.getFeedbackText(),
+                submission.getGradedAt()
         );
     }
 
     public static AssignmentSubmissionSummaryResponse notSubmitted() {
-        return new AssignmentSubmissionSummaryResponse(null, AssignmentSubmissionStatus.NOT_SUBMITTED.name(), null);
+        return new AssignmentSubmissionSummaryResponse(
+                null,
+                AssignmentSubmissionStatus.NOT_SUBMITTED.name(),
+                null,
+                null,
+                null,
+                null
+        );
     }
 }

@@ -18,6 +18,8 @@ public record CreateAssignmentRequest(
         AssignmentType type,
         @NotNull(message = "dueAt은 필수입니다.")
         OffsetDateTime dueAt,
+        @NotNull(message = "배점은 필수입니다.")
+        Integer maxScore,
         boolean teamAssignment
 ) {
 }

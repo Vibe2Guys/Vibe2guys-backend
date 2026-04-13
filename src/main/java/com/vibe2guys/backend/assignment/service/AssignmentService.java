@@ -12,6 +12,7 @@ import com.vibe2guys.backend.assignment.dto.AssignmentSubmissionSummaryResponse;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentRequest;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentResponse;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentSubmissionRequest;
+import com.vibe2guys.backend.assignment.dto.GradeAssignmentSubmissionRequest;
 import com.vibe2guys.backend.assignment.repository.AssignmentRepository;
 import com.vibe2guys.backend.assignment.repository.AssignmentSubmissionFileRepository;
 import com.vibe2guys.backend.assignment.repository.AssignmentSubmissionRepository;
@@ -66,6 +67,7 @@ public class AssignmentService {
                 .type(request.type())
                 .teamAssignment(request.teamAssignment())
                 .dueAt(request.dueAt())
+                .maxScore(request.maxScore())
                 .createdBy(user)
                 .build());
         notificationService.notifyAssignmentCreated(courseId, assignment.getTitle());
@@ -174,6 +176,32 @@ public class AssignmentService {
         return assignmentSubmissionRepository.findByAssignmentIdOrderBySubmittedAtDesc(assignmentId).stream()
                 .map(AssignmentSubmissionListItemResponse::from)
                 .toList();
+    }
+
+    @Transactional
+    public AssignmentSubmissionResponse gradeSubmission(
+            Long assignmentId,
+            Long submissionId,
+            Long userId,
+            GradeAssignmentSubmissionRequest request
+    ) {
+        User user = userService.getById(userId);
+        Assignment assignment = getAccessibleAssignment(assignmentId, user);
+        getManageableCourse(assignment.getCourse().getId(), user);
+        if (request.score() > assignment.getMaxScore()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "점수는 과제 배점을 초과할 수 없습니다.");
+        }
+
+        AssignmentSubmission submission = assignmentSubmissionRepository.findByIdAndAssignmentId(submissionId, assignmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.ASSIGNMENT_NOT_FOUND, "과제 제출을 찾을 수 없습니다."));
+        String feedback = request.feedback() == null ? null : request.feedback().trim();
+        submission.grade(
+                request.score(),
+                feedback == null || feedback.isBlank() ? null : feedback,
+                user,
+                OffsetDateTime.now()
+        );
+        return AssignmentSubmissionResponse.from(submission);
     }
 
     private Assignment getAccessibleAssignment(Long assignmentId, User user) {

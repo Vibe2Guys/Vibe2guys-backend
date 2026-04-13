@@ -7,13 +7,19 @@ import java.time.OffsetDateTime;
 public record AssignmentSubmissionResponse(
         Long submissionId,
         OffsetDateTime submittedAt,
-        String status
+        String status,
+        Integer score,
+        String feedback,
+        OffsetDateTime gradedAt
 ) {
     public static AssignmentSubmissionResponse from(AssignmentSubmission submission) {
         return new AssignmentSubmissionResponse(
                 submission.getId(),
                 submission.getSubmittedAt(),
-                submission.getStatus().name()
+                submission.getStatus().name(),
+                submission.getScore(),
+                submission.getFeedbackText(),
+                submission.getGradedAt()
         );
     }
 }

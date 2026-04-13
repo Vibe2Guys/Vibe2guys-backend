@@ -7,6 +7,7 @@ import com.vibe2guys.backend.assignment.dto.AssignmentSubmissionResponse;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentRequest;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentResponse;
 import com.vibe2guys.backend.assignment.dto.CreateAssignmentSubmissionRequest;
+import com.vibe2guys.backend.assignment.dto.GradeAssignmentSubmissionRequest;
 import com.vibe2guys.backend.assignment.service.AssignmentService;
 import com.vibe2guys.backend.common.response.ApiResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
@@ -79,5 +80,18 @@ public class AssignmentController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("과제 제출 목록 조회 성공", assignmentService.getSubmissions(assignmentId, principal.getId()));
+    }
+
+    @PatchMapping("/api/v1/assignments/{assignmentId}/submissions/{submissionId}/grade")
+    public ApiResponse<AssignmentSubmissionResponse> gradeSubmission(
+            @PathVariable Long assignmentId,
+            @PathVariable Long submissionId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody GradeAssignmentSubmissionRequest request
+    ) {
+        return ApiResponse.success(
+                "과제 채점 완료",
+                assignmentService.gradeSubmission(assignmentId, submissionId, principal.getId(), request)
+        );
     }
 }

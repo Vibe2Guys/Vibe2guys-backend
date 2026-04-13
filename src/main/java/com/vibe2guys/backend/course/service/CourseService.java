@@ -3,7 +3,12 @@ package com.vibe2guys.backend.course.service;
 import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
 import com.vibe2guys.backend.common.response.PageResponse;
+import com.vibe2guys.backend.assignment.domain.Assignment;
+import com.vibe2guys.backend.assignment.domain.AssignmentSubmission;
+import com.vibe2guys.backend.assignment.repository.AssignmentRepository;
+import com.vibe2guys.backend.assignment.repository.AssignmentSubmissionRepository;
 import com.vibe2guys.backend.course.domain.Course;
+import com.vibe2guys.backend.course.domain.CourseAnnouncement;
 import com.vibe2guys.backend.course.domain.Content;
 import com.vibe2guys.backend.course.domain.CourseStatus;
 import com.vibe2guys.backend.course.domain.CourseEnrollment;
@@ -12,13 +17,19 @@ import com.vibe2guys.backend.course.domain.CourseStudentMemo;
 import com.vibe2guys.backend.course.domain.CourseWeek;
 import com.vibe2guys.backend.course.domain.EnrollmentStatus;
 import com.vibe2guys.backend.course.dto.ContentDetailResponse;
+import com.vibe2guys.backend.course.dto.CourseAnnouncementResponse;
 import com.vibe2guys.backend.course.dto.CourseLearningLogItemResponse;
 import com.vibe2guys.backend.course.dto.CourseListItemResponse;
 import com.vibe2guys.backend.course.dto.CourseStudentItemResponse;
 import com.vibe2guys.backend.course.dto.CourseDetailResponse;
+import com.vibe2guys.backend.course.dto.CourseGradeItemResponse;
+import com.vibe2guys.backend.course.dto.CourseGradebookResponse;
+import com.vibe2guys.backend.course.dto.CourseHomeResponse;
+import com.vibe2guys.backend.course.dto.CourseHomeTodoItemResponse;
 import com.vibe2guys.backend.course.dto.CourseInstructorSummaryResponse;
 import com.vibe2guys.backend.course.dto.CourseWeekSummaryResponse;
 import com.vibe2guys.backend.course.dto.CreateContentRequest;
+import com.vibe2guys.backend.course.dto.CreateCourseAnnouncementRequest;
 import com.vibe2guys.backend.course.dto.CreateContentResponse;
 import com.vibe2guys.backend.course.dto.CreateCourseRequest;
 import com.vibe2guys.backend.course.dto.CreateCourseResponse;
@@ -30,6 +41,7 @@ import com.vibe2guys.backend.course.dto.UpdateCourseStudentMemoRequest;
 import com.vibe2guys.backend.course.dto.UpdateCourseRequest;
 import com.vibe2guys.backend.course.dto.UpdateCourseResponse;
 import com.vibe2guys.backend.course.dto.WeekContentItemResponse;
+import com.vibe2guys.backend.course.repository.CourseAnnouncementRepository;
 import com.vibe2guys.backend.course.repository.CourseStudentMemoRepository;
 import com.vibe2guys.backend.course.repository.ContentRepository;
 import com.vibe2guys.backend.course.repository.CourseEnrollmentRepository;
@@ -44,6 +56,12 @@ import com.vibe2guys.backend.learning.domain.ContentProgressSummary;
 import com.vibe2guys.backend.learning.repository.AttendanceSummaryRepository;
 import com.vibe2guys.backend.learning.repository.ContentProgressSummaryRepository;
 import com.vibe2guys.backend.notification.service.NotificationService;
+import com.vibe2guys.backend.quiz.domain.Quiz;
+import com.vibe2guys.backend.quiz.domain.QuizQuestion;
+import com.vibe2guys.backend.quiz.domain.QuizSubmission;
+import com.vibe2guys.backend.quiz.repository.QuizQuestionRepository;
+import com.vibe2guys.backend.quiz.repository.QuizRepository;
+import com.vibe2guys.backend.quiz.repository.QuizSubmissionRepository;
 import com.vibe2guys.backend.user.domain.User;
 import com.vibe2guys.backend.user.domain.UserRole;
 import com.vibe2guys.backend.user.service.UserService;
@@ -73,10 +91,16 @@ public class CourseService {
     private final CourseInstructorRepository courseInstructorRepository;
     private final CourseWeekRepository courseWeekRepository;
     private final CourseStudentMemoRepository courseStudentMemoRepository;
+    private final CourseAnnouncementRepository courseAnnouncementRepository;
     private final ContentRepository contentRepository;
     private final ContentProgressSummaryRepository contentProgressSummaryRepository;
     private final AttendanceSummaryRepository attendanceSummaryRepository;
     private final DailyAnalyticsSnapshotRepository dailyAnalyticsSnapshotRepository;
+    private final AssignmentRepository assignmentRepository;
+    private final AssignmentSubmissionRepository assignmentSubmissionRepository;
+    private final QuizRepository quizRepository;
+    private final QuizQuestionRepository quizQuestionRepository;
+    private final QuizSubmissionRepository quizSubmissionRepository;
     private final UserService userService;
     private final NotificationService notificationService;
 
@@ -220,6 +244,39 @@ public class CourseService {
         return CourseDetailResponse.of(course, instructor, weeks);
     }
 
+    public CourseHomeResponse getCourseHome(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        Course course = getAccessibleCourse(courseId, user);
+        CourseProgressSnapshot snapshot = buildCourseProgressSnapshot(courseId, userId);
+        List<CourseAnnouncementResponse> announcements = courseAnnouncementRepository
+                .findByCourseIdOrderByPinnedDescCreatedAtDesc(courseId)
+                .stream()
+                .limit(5)
+                .map(CourseAnnouncementResponse::from)
+                .toList();
+        List<CourseHomeTodoItemResponse> todos = buildCourseTodos(courseId, userId);
+        return new CourseHomeResponse(
+                course.getId(),
+                course.getTitle(),
+                course.getDescription(),
+                course.getCourseCode(),
+                course.isPublic(),
+                resolveInstructorName(course),
+                snapshot.progressRate(),
+                snapshot.attendanceRate(),
+                (int) todos.stream()
+                        .filter(item -> !"완료".equals(item.status()) && !"채점 완료".equals(item.status()))
+                        .count(),
+                snapshot.recentLearningTitle(),
+                snapshot.recentLearningAt(),
+                announcements,
+                todos,
+                courseWeekRepository.findByCourseIdOrderByWeekNumberAsc(courseId).stream()
+                        .map(CourseWeekSummaryResponse::from)
+                        .toList()
+        );
+    }
+
     public PageResponse<CourseStudentItemResponse> getStudents(Long courseId, Long userId, int page, int size, String keyword) {
         User user = userService.getById(userId);
         getManageableCourse(courseId, user);
@@ -239,6 +296,28 @@ public class CourseService {
             }
         }
         return PageResponse.from(enrollments.map(enrollment -> toCourseStudentItemResponse(enrollment, contentCount, memoByStudentId.get(enrollment.getStudent().getId()))));
+    }
+
+    public List<CourseAnnouncementResponse> getAnnouncements(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        getAccessibleCourse(courseId, user);
+        return courseAnnouncementRepository.findByCourseIdOrderByPinnedDescCreatedAtDesc(courseId).stream()
+                .map(CourseAnnouncementResponse::from)
+                .toList();
+    }
+
+    @Transactional
+    public CourseAnnouncementResponse createAnnouncement(Long courseId, Long userId, CreateCourseAnnouncementRequest request) {
+        User user = userService.getById(userId);
+        Course course = getManageableCourse(courseId, user);
+        CourseAnnouncement announcement = courseAnnouncementRepository.save(CourseAnnouncement.builder()
+                .course(course)
+                .title(request.title().trim())
+                .body(request.body().trim())
+                .pinned(request.pinned())
+                .createdBy(user)
+                .build());
+        return CourseAnnouncementResponse.from(announcement);
     }
 
     @Transactional
@@ -373,10 +452,41 @@ public class CourseService {
                 .toList();
     }
 
+    public CourseGradebookResponse getMyGradebook(Long courseId, Long userId) {
+        User user = userService.getById(userId);
+        if (user.getRole() != UserRole.STUDENT) {
+            throw new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "학생만 자신의 성적을 조회할 수 있습니다.");
+        }
+        Course course = getAccessibleCourse(courseId, user);
+        CourseProgressSnapshot snapshot = buildCourseProgressSnapshot(courseId, userId);
+        List<CourseGradeItemResponse> assignmentItems = buildAssignmentGradeItems(courseId, userId);
+        List<CourseGradeItemResponse> quizItems = buildQuizGradeItems(courseId, userId);
+        int assignmentAverage = averagePercent(assignmentItems);
+        int quizAverage = averagePercent(quizItems);
+        int overallScore = clamp((int) Math.round(
+                snapshot.attendanceRate() * 0.2
+                        + assignmentAverage * 0.4
+                        + quizAverage * 0.25
+                        + snapshot.progressRate() * 0.15
+        ));
+        return new CourseGradebookResponse(
+                courseId,
+                course.getTitle(),
+                snapshot.attendanceRate(),
+                snapshot.progressRate(),
+                assignmentAverage,
+                quizAverage,
+                overallScore,
+                assignmentItems,
+                quizItems
+        );
+    }
+
     private List<MyCourseItemResponse> mapStudentCourses(List<CourseEnrollment> enrollments) {
         List<MyCourseItemResponse> responses = new ArrayList<>();
         for (CourseEnrollment enrollment : enrollments) {
             Course course = enrollment.getCourse();
+            CourseProgressSnapshot snapshot = buildCourseProgressSnapshot(course.getId(), enrollment.getStudent().getId());
             responses.add(new MyCourseItemResponse(
                     course.getId(),
                     course.getTitle(),
@@ -385,9 +495,9 @@ public class CourseService {
                     null,
                     course.getCourseCode(),
                     course.isPublic(),
-                    0,
-                    0,
-                    0
+                    snapshot.progressRate(),
+                    snapshot.attendanceRate(),
+                    countPendingAssignments(course.getId(), enrollment.getStudent().getId())
             ));
         }
         return responses;
@@ -518,6 +628,148 @@ public class CourseService {
         );
     }
 
+    private List<CourseHomeTodoItemResponse> buildCourseTodos(Long courseId, Long userId) {
+        OffsetDateTime now = OffsetDateTime.now();
+        List<CourseHomeTodoItemResponse> items = new ArrayList<>();
+
+        for (Assignment assignment : assignmentRepository.findByCourseIdOrderByDueAtAsc(courseId)) {
+            AssignmentSubmission submission = assignmentSubmissionRepository
+                    .findByAssignmentIdAndStudentId(assignment.getId(), userId)
+                    .orElse(null);
+            String status = submission == null
+                    ? (assignment.getDueAt().isBefore(now) ? "미제출" : "제출 필요")
+                    : (submission.getScore() == null ? "제출 완료" : "채점 완료");
+            items.add(new CourseHomeTodoItemResponse(
+                    "ASSIGNMENT",
+                    assignment.getId(),
+                    assignment.getTitle(),
+                    status,
+                    assignment.getDueAt(),
+                    "과제"
+            ));
+        }
+
+        for (Quiz quiz : quizRepository.findByCourseIdOrderByDueAtAsc(courseId)) {
+            QuizSubmission submission = quizSubmissionRepository.findByQuizIdAndStudentId(quiz.getId(), userId).orElse(null);
+            String status = submission == null
+                    ? (quiz.getDueAt().isBefore(now) ? "미응시" : "응시 필요")
+                    : "응시 완료";
+            items.add(new CourseHomeTodoItemResponse(
+                    "QUIZ",
+                    quiz.getId(),
+                    quiz.getTitle(),
+                    status,
+                    quiz.getDueAt(),
+                    "퀴즈"
+            ));
+        }
+
+        for (Content content : contentRepository.findByCourseIdOrderByIdAsc(courseId)) {
+            if (content.getOpenAt() != null && content.getOpenAt().isAfter(now)) {
+                items.add(new CourseHomeTodoItemResponse(
+                        "CONTENT",
+                        content.getId(),
+                        content.getTitle(),
+                        "예정",
+                        content.getOpenAt(),
+                        "콘텐츠 오픈 예정"
+                ));
+            }
+        }
+
+        items.sort(Comparator.comparing(CourseHomeTodoItemResponse::scheduleAt, Comparator.nullsLast(Comparator.naturalOrder())));
+        return items.stream().limit(8).toList();
+    }
+
+    private List<CourseGradeItemResponse> buildAssignmentGradeItems(Long courseId, Long userId) {
+        List<CourseGradeItemResponse> items = new ArrayList<>();
+        for (Assignment assignment : assignmentRepository.findByCourseIdOrderByDueAtAsc(courseId)) {
+            AssignmentSubmission submission = assignmentSubmissionRepository
+                    .findByAssignmentIdAndStudentId(assignment.getId(), userId)
+                    .orElse(null);
+            int earnedScore = submission != null && submission.getScore() != null ? submission.getScore() : 0;
+            int maxScore = Math.max(assignment.getMaxScore(), 1);
+            String status = submission == null ? "미제출" : submission.getScore() == null ? "채점 대기" : "채점 완료";
+            items.add(new CourseGradeItemResponse(
+                    "ASSIGNMENT",
+                    assignment.getId(),
+                    assignment.getTitle(),
+                    earnedScore,
+                    assignment.getMaxScore(),
+                    clamp((int) Math.round(earnedScore * 100.0 / maxScore)),
+                    status,
+                    submission != null ? submission.getFeedbackText() : null,
+                    submission != null ? submission.getSubmittedAt() : null,
+                    assignment.getDueAt()
+            ));
+        }
+        return items;
+    }
+
+    private List<CourseGradeItemResponse> buildQuizGradeItems(Long courseId, Long userId) {
+        List<CourseGradeItemResponse> items = new ArrayList<>();
+        for (Quiz quiz : quizRepository.findByCourseIdOrderByDueAtAsc(courseId)) {
+            int maxScore = Math.max(
+                    quizQuestionRepository.findByQuizIdOrderBySortOrderAsc(quiz.getId()).stream()
+                            .mapToInt(QuizQuestion::getScore)
+                            .sum(),
+                    1
+            );
+            QuizSubmission submission = quizSubmissionRepository.findByQuizIdAndStudentId(quiz.getId(), userId).orElse(null);
+            int earnedScore = submission != null ? submission.getTotalScore() : 0;
+            String status = submission == null ? "미응시" : submission.getSubjectiveScore() == null ? "채점 대기" : "채점 완료";
+            items.add(new CourseGradeItemResponse(
+                    "QUIZ",
+                    quiz.getId(),
+                    quiz.getTitle(),
+                    earnedScore,
+                    maxScore,
+                    clamp((int) Math.round(earnedScore * 100.0 / maxScore)),
+                    status,
+                    submission != null && submission.getSubjectiveScore() == null ? "주관식 채점 전입니다." : null,
+                    submission != null ? submission.getSubmittedAt() : null,
+                    quiz.getDueAt()
+            ));
+        }
+        return items;
+    }
+
+    private int countPendingAssignments(Long courseId, Long studentId) {
+        int pending = 0;
+        for (Assignment assignment : assignmentRepository.findByCourseIdOrderByDueAtAsc(courseId)) {
+            if (assignmentSubmissionRepository.findByAssignmentIdAndStudentId(assignment.getId(), studentId).isEmpty()) {
+                pending++;
+            }
+        }
+        return pending;
+    }
+
+    private CourseProgressSnapshot buildCourseProgressSnapshot(Long courseId, Long studentId) {
+        List<ContentProgressSummary> progressSummaries = contentProgressSummaryRepository.findByCourseIdAndStudentId(courseId, studentId);
+        List<AttendanceSummary> attendanceSummaries = attendanceSummaryRepository.findByCourseIdAndStudentId(courseId, studentId);
+        int contentCount = Math.max(contentRepository.findByCourseIdOrderByIdAsc(courseId).size(), 1);
+        int progressRate = progressSummaries.isEmpty()
+                ? 0
+                : averageScore(progressSummaries.stream().map(ContentProgressSummary::getProgressRate).toList());
+        int attendanceRate = clamp(attendanceSummaries.size() * 100 / contentCount);
+        ContentProgressSummary recentProgress = progressSummaries.stream()
+                .max(Comparator.comparing(ContentProgressSummary::getUpdatedAt))
+                .orElse(null);
+        return new CourseProgressSnapshot(
+                progressRate,
+                attendanceRate,
+                recentProgress != null ? recentProgress.getContent().getTitle() : null,
+                recentProgress != null ? recentProgress.getUpdatedAt() : null
+        );
+    }
+
+    private String resolveInstructorName(Course course) {
+        return courseInstructorRepository.findByCourseId(course.getId()).stream()
+                .findFirst()
+                .map(item -> item.getInstructor().getName())
+                .orElseGet(() -> course.getCreatedBy().getName());
+    }
+
     private RiskLevel resolveRiskLevel(int progressRate, int attendanceRate) {
         if (progressRate < 45 || attendanceRate < 45) {
             return RiskLevel.HIGH;
@@ -548,6 +800,16 @@ public class CourseService {
         }
         return clamp((int) Math.round(scores.stream()
                 .mapToInt(Integer::intValue)
+                .average()
+                .orElse(0)));
+    }
+
+    private int averagePercent(List<CourseGradeItemResponse> items) {
+        if (items.isEmpty()) {
+            return 0;
+        }
+        return clamp((int) Math.round(items.stream()
+                .mapToInt(CourseGradeItemResponse::percentScore)
                 .average()
                 .orElse(0)));
     }
@@ -616,5 +878,13 @@ public class CourseService {
     private boolean canStudentAccessContent(Content content, OffsetDateTime now) {
         boolean opened = content.getOpenAt() == null || !content.getOpenAt().isAfter(now);
         return content.isPublished() && opened;
+    }
+
+    private record CourseProgressSnapshot(
+            int progressRate,
+            int attendanceRate,
+            String recentLearningTitle,
+            OffsetDateTime recentLearningAt
+    ) {
     }
 }

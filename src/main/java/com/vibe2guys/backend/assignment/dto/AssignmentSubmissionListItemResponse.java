@@ -9,7 +9,10 @@ public record AssignmentSubmissionListItemResponse(
         Long studentId,
         String studentName,
         String status,
-        OffsetDateTime submittedAt
+        OffsetDateTime submittedAt,
+        Integer score,
+        String feedback,
+        OffsetDateTime gradedAt
 ) {
     public static AssignmentSubmissionListItemResponse from(AssignmentSubmission submission) {
         return new AssignmentSubmissionListItemResponse(
@@ -17,7 +20,10 @@ public record AssignmentSubmissionListItemResponse(
                 submission.getStudent().getId(),
                 submission.getStudent().getName(),
                 submission.getStatus().name(),
-                submission.getSubmittedAt()
+                submission.getSubmittedAt(),
+                submission.getScore(),
+                submission.getFeedbackText(),
+                submission.getGradedAt()
         );
     }
 }

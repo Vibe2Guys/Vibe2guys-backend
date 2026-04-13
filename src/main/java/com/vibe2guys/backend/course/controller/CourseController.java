@@ -3,9 +3,13 @@ package com.vibe2guys.backend.course.controller;
 import com.vibe2guys.backend.common.response.ApiResponse;
 import com.vibe2guys.backend.common.response.PageResponse;
 import com.vibe2guys.backend.common.security.UserPrincipal;
+import com.vibe2guys.backend.course.dto.CourseAnnouncementResponse;
+import com.vibe2guys.backend.course.dto.CourseGradebookResponse;
 import com.vibe2guys.backend.course.dto.CourseLearningLogItemResponse;
 import com.vibe2guys.backend.course.dto.CourseListItemResponse;
 import com.vibe2guys.backend.course.dto.CourseStudentItemResponse;
+import com.vibe2guys.backend.course.dto.CourseHomeResponse;
+import com.vibe2guys.backend.course.dto.CreateCourseAnnouncementRequest;
 import com.vibe2guys.backend.course.dto.CreateCourseRequest;
 import com.vibe2guys.backend.course.dto.CreateCourseResponse;
 import com.vibe2guys.backend.course.dto.CreateWeekRequest;
@@ -72,6 +76,14 @@ public class CourseController {
         return ApiResponse.success("강의 상세 조회 성공", courseService.getCourseDetail(courseId, principal.getId()));
     }
 
+    @GetMapping("/{courseId}/home")
+    public ApiResponse<CourseHomeResponse> getCourseHome(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("강의 홈 조회 성공", courseService.getCourseHome(courseId, principal.getId()));
+    }
+
     @PatchMapping("/{courseId}")
     public ApiResponse<UpdateCourseResponse> updateCourse(
             @PathVariable Long courseId,
@@ -118,6 +130,23 @@ public class CourseController {
         return ApiResponse.success("수강생 목록 조회 성공", courseService.getStudents(courseId, principal.getId(), page, size, keyword));
     }
 
+    @GetMapping("/{courseId}/announcements")
+    public ApiResponse<List<CourseAnnouncementResponse>> getAnnouncements(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("강의 공지 조회 성공", courseService.getAnnouncements(courseId, principal.getId()));
+    }
+
+    @PostMapping("/{courseId}/announcements")
+    public ApiResponse<CourseAnnouncementResponse> createAnnouncement(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal,
+            @Valid @RequestBody CreateCourseAnnouncementRequest request
+    ) {
+        return ApiResponse.success("강의 공지 등록 완료", courseService.createAnnouncement(courseId, principal.getId(), request));
+    }
+
     @PatchMapping("/{courseId}/students/{studentId}/memo")
     public ApiResponse<CourseStudentItemResponse> updateStudentMemo(
             @PathVariable Long courseId,
@@ -146,6 +175,14 @@ public class CourseController {
             @AuthenticationPrincipal UserPrincipal principal
     ) {
         return ApiResponse.success("내 학습 로그 조회 성공", courseService.getMyLearningLogs(courseId, principal.getId()));
+    }
+
+    @GetMapping("/{courseId}/gradebook/me")
+    public ApiResponse<CourseGradebookResponse> getMyGradebook(
+            @PathVariable Long courseId,
+            @AuthenticationPrincipal UserPrincipal principal
+    ) {
+        return ApiResponse.success("내 성적 조회 성공", courseService.getMyGradebook(courseId, principal.getId()));
     }
 
 }

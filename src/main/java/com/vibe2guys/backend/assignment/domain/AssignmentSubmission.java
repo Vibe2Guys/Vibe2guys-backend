@@ -53,6 +53,19 @@ public class AssignmentSubmission extends BaseTimeEntity {
     @Column(name = "submitted_at", nullable = false)
     private OffsetDateTime submittedAt;
 
+    @Column(name = "score")
+    private Integer score;
+
+    @Column(name = "feedback_text", length = 4000)
+    private String feedbackText;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "graded_by")
+    private User gradedBy;
+
+    @Column(name = "graded_at")
+    private OffsetDateTime gradedAt;
+
     @Builder
     private AssignmentSubmission(
             Assignment assignment,
@@ -60,7 +73,11 @@ public class AssignmentSubmission extends BaseTimeEntity {
             User student,
             String answerText,
             AssignmentSubmissionStatus status,
-            OffsetDateTime submittedAt
+            OffsetDateTime submittedAt,
+            Integer score,
+            String feedbackText,
+            User gradedBy,
+            OffsetDateTime gradedAt
     ) {
         this.assignment = assignment;
         this.course = course;
@@ -68,11 +85,26 @@ public class AssignmentSubmission extends BaseTimeEntity {
         this.answerText = answerText;
         this.status = status;
         this.submittedAt = submittedAt;
+        this.score = score;
+        this.feedbackText = feedbackText;
+        this.gradedBy = gradedBy;
+        this.gradedAt = gradedAt;
     }
 
     public void resubmit(String answerText, AssignmentSubmissionStatus status, OffsetDateTime submittedAt) {
         this.answerText = answerText;
         this.status = status;
         this.submittedAt = submittedAt;
+        this.score = null;
+        this.feedbackText = null;
+        this.gradedBy = null;
+        this.gradedAt = null;
+    }
+
+    public void grade(Integer score, String feedbackText, User gradedBy, OffsetDateTime gradedAt) {
+        this.score = score;
+        this.feedbackText = feedbackText;
+        this.gradedBy = gradedBy;
+        this.gradedAt = gradedAt;
     }
 }

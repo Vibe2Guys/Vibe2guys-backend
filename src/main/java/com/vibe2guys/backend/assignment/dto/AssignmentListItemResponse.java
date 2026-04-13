@@ -9,6 +9,7 @@ public record AssignmentListItemResponse(
         String title,
         String type,
         OffsetDateTime dueAt,
+        int maxScore,
         boolean isSubmitted,
         boolean teamAssignment
 ) {
@@ -18,6 +19,7 @@ public record AssignmentListItemResponse(
                 assignment.getTitle(),
                 assignment.getType().name(),
                 assignment.getDueAt(),
+                assignment.getMaxScore(),
                 submitted,
                 assignment.isTeamAssignment()
         );
