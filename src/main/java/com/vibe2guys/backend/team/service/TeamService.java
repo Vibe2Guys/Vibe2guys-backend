@@ -111,7 +111,7 @@ public class TeamService {
             TeamMatching matching = buildTeamMatching(draft.profiles());
             Team team = teamRepository.save(Team.builder()
                     .course(course)
-                    .name("Team " + (index + 1))
+                    .name(course.getTitle() + " : " + (index + 1) + "팀")
                     .status(TeamStatus.ACTIVE)
                     .teamBuildingScore(matching.teamBuildingScore())
                     .profileDiversityScore(matching.profileDiversityScore())
