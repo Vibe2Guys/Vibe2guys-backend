@@ -40,6 +40,9 @@ import java.util.List;
 @Transactional(readOnly = true)
 public class AiService {
 
+    private static final int FOLLOW_UP_QUESTION_MAX_LENGTH = 2000;
+    private static final int FOLLOW_UP_FEEDBACK_MAX_LENGTH = 2000;
+
     private final AiFollowUpQuestionRepository questionRepository;
     private final AiFollowUpResponseRepository responseRepository;
     private final AiFollowUpAnalysisRepository analysisRepository;
@@ -49,6 +52,7 @@ public class AiService {
     private final CourseInstructorRepository courseInstructorRepository;
     private final UserService userService;
     private final NotificationService notificationService;
+    private final AiFeatureService aiFeatureService;
 
     @Transactional
     public FollowUpQuestionResponse createFollowUpQuestion(Long requesterId, CreateFollowUpQuestionRequest request) {
@@ -62,8 +66,19 @@ public class AiService {
         validateQuestionCreateAccess(requester, student, course, content);
 
         String normalizedSource = resolveFollowUpSource(course, content, request.sourceText());
-        FollowUpDifficultyLevel difficultyLevel = inferDifficulty(normalizedSource);
-        String questionText = generateQuestion(request.contextType(), normalizedSource, difficultyLevel);
+        FollowUpDifficultyLevel fallbackDifficulty = inferDifficulty(normalizedSource);
+        AiFeatureService.AiGeneratedFollowUpQuestion aiQuestion = aiFeatureService.generateFollowUpQuestion(
+                request.contextType(),
+                course,
+                content,
+                normalizedSource,
+                fallbackDifficulty
+        );
+        FollowUpDifficultyLevel difficultyLevel = aiQuestion != null ? aiQuestion.difficultyLevel() : fallbackDifficulty;
+        String questionText = aiQuestion != null
+                ? aiQuestion.questionText()
+                : generateQuestion(request.contextType(), normalizedSource, difficultyLevel);
+        questionText = truncate(questionText, FOLLOW_UP_QUESTION_MAX_LENGTH);
 
         AiFollowUpQuestion question = questionRepository.save(AiFollowUpQuestion.builder()
                 .course(course)
@@ -104,11 +119,25 @@ public class AiService {
                 .submittedAt(submittedAt)
                 .build());
 
+        AiFeatureService.AiGeneratedFollowUpAnalysis aiAnalysis = aiFeatureService.analyzeFollowUpResponse(
+                question.getQuestionText(),
+                question.getSourceText(),
+                response.getAnswerText(),
+                delaySeconds
+        );
+        int understandingScore = aiAnalysis != null
+                ? aiAnalysis.understandingScore()
+                : calculateUnderstandingScore(question.getSourceText(), response.getAnswerText(), delaySeconds);
+        String feedback = aiAnalysis != null
+                ? aiAnalysis.feedback()
+                : buildFeedback(question.getSourceText(), response.getAnswerText(), delaySeconds);
+        feedback = truncate(feedback, FOLLOW_UP_FEEDBACK_MAX_LENGTH);
+
         analysisRepository.save(AiFollowUpAnalysis.builder()
                 .question(question)
                 .response(response)
-                .understandingScore(calculateUnderstandingScore(question.getSourceText(), response.getAnswerText(), delaySeconds))
-                .feedback(buildFeedback(question.getSourceText(), response.getAnswerText(), delaySeconds))
+                .understandingScore(understandingScore)
+                .feedback(feedback)
                 .analyzedAt(submittedAt)
                 .build());
         return FollowUpAnswerResponse.from(response);
@@ -249,5 +278,12 @@ public class AiService {
             return "원문과의 연결이 약합니다. 핵심 용어를 활용해 개념 관계를 더 분명히 설명해보세요.";
         }
         return "핵심 개념을 잘 연결했습니다. 다음에는 실제 사례까지 함께 설명해보면 더 좋습니다.";
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength).trim();
     }
 }

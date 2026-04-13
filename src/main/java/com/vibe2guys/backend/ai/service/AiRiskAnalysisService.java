@@ -36,6 +36,7 @@ public class AiRiskAnalysisService {
         }
 
         try {
+            String model = normalizeModelId(properties.model());
             SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
             requestFactory.setConnectTimeout(properties.timeoutSeconds() * 1000);
             requestFactory.setReadTimeout(properties.timeoutSeconds() * 1000);
@@ -47,7 +48,7 @@ public class AiRiskAnalysisService {
                     .build();
 
             Map<String, Object> request = new HashMap<>();
-            request.put("model", properties.model());
+            request.put("model", model);
             request.put("temperature", properties.temperature());
             request.put("response_format", Map.of("type", "json_object"));
             request.put("messages", List.of(
@@ -55,11 +56,15 @@ public class AiRiskAnalysisService {
                     Map.of("role", "user", "content", buildUserPrompt(input))
             ));
 
-            JsonNode response = client.post()
+            String responseBody = client.post()
                     .uri("/chat/completions")
                     .body(request)
                     .retrieve()
-                    .body(JsonNode.class);
+                    .body(String.class);
+            if (responseBody == null || responseBody.isBlank()) {
+                return null;
+            }
+            JsonNode response = objectMapper.readTree(responseBody);
 
             String content = response.path("choices").path(0).path("message").path("content").asText("");
             if (content.isBlank()) {
@@ -97,5 +102,9 @@ public class AiRiskAnalysisService {
 
     private int clamp(int score) {
         return Math.max(0, Math.min(100, score));
+    }
+
+    private String normalizeModelId(String rawModel) {
+        return rawModel == null ? "" : rawModel.trim().toLowerCase().replace(' ', '-');
     }
 }

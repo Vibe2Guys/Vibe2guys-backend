@@ -1,6 +1,7 @@
 package com.vibe2guys.backend.team.service;
 
 import com.vibe2guys.backend.ai.domain.AiFollowUpAnalysis;
+import com.vibe2guys.backend.ai.service.AiFeatureService;
 import com.vibe2guys.backend.ai.repository.AiFollowUpAnalysisRepository;
 import com.vibe2guys.backend.common.exception.BusinessException;
 import com.vibe2guys.backend.common.exception.ErrorCode;
@@ -72,6 +73,8 @@ import java.util.Set;
 public class TeamService {
 
     private static final String GROUPING_BASIS = "LEARNING_STYLE_BALANCED";
+    private static final int PROFILE_SUMMARY_MAX_LENGTH = 300;
+    private static final int MATCHING_SUMMARY_MAX_LENGTH = 500;
 
     private final TeamRepository teamRepository;
     private final TeamMemberRepository teamMemberRepository;
@@ -87,6 +90,7 @@ public class TeamService {
     private final AttendanceSummaryRepository attendanceSummaryRepository;
     private final AiFollowUpAnalysisRepository aiFollowUpAnalysisRepository;
     private final UserService userService;
+    private final AiFeatureService aiFeatureService;
 
     @Transactional
     public AutoGroupingResponse autoGrouping(Long courseId, Long userId, AutoGroupingRequest request) {
@@ -127,7 +131,7 @@ public class TeamService {
                     .status(TeamStatus.ACTIVE)
                     .teamBuildingScore(matching.teamBuildingScore())
                     .profileDiversityScore(matching.profileDiversityScore())
-                    .matchingSummary(matching.matchingSummary())
+                    .matchingSummary(truncate(matching.matchingSummary(), MATCHING_SUMMARY_MAX_LENGTH))
                     .build());
             teamChatRoomRepository.save(TeamChatRoom.builder().team(team).build());
 
@@ -143,7 +147,7 @@ public class TeamService {
                         .initiativeScore(profile.initiativeScore())
                         .supportScore(profile.supportScore())
                         .understandingScore(profile.understandingScore())
-                        .profileSummary(profile.profileSummary())
+                        .profileSummary(truncate(profile.profileSummary(), PROFILE_SUMMARY_MAX_LENGTH))
                         .build());
             }
             createdTeams.add(TeamListItemResponse.of(team, draft.profiles().size()));
@@ -303,7 +307,7 @@ public class TeamService {
                     .initiativeScore(profile.initiativeScore())
                     .supportScore(profile.supportScore())
                     .understandingScore(profile.understandingScore())
-                    .profileSummary(profile.profileSummary())
+                    .profileSummary(truncate(profile.profileSummary(), PROFILE_SUMMARY_MAX_LENGTH))
                     .build());
         }
 
@@ -438,8 +442,29 @@ public class TeamService {
         int reliabilityScore = clamp((averageProgress * 40 + completionRate * 25 + attendanceCoverage * 35) / 100);
         int initiativeScore = clamp((followUpParticipation * 40 + replaySignal * 20 + averageProgress * 20 + attendanceCoverage * 20) / 100);
         int supportScore = clamp((consistencyScore * 35 + attendanceCoverage * 25 + understandingScore * 20 + completionRate * 20) / 100);
-        TeamLearningStyle learningStyle = resolveLearningStyle(reliabilityScore, initiativeScore, supportScore, understandingScore);
-        String profileSummary = buildProfileSummary(learningStyle, reliabilityScore, initiativeScore, supportScore, understandingScore);
+        TeamLearningStyle fallbackStyle = resolveLearningStyle(reliabilityScore, initiativeScore, supportScore, understandingScore);
+        Map<String, Object> profileInput = new HashMap<>();
+        profileInput.put("studentName", student.getName());
+        profileInput.put("averageProgress", averageProgress);
+        profileInput.put("completionRate", completionRate);
+        profileInput.put("attendanceCoverage", attendanceCoverage);
+        profileInput.put("followUpParticipation", followUpParticipation);
+        profileInput.put("replaySignal", replaySignal);
+        profileInput.put("understandingScore", understandingScore);
+        profileInput.put("consistencyScore", consistencyScore);
+        profileInput.put("reliabilityScore", reliabilityScore);
+        profileInput.put("initiativeScore", initiativeScore);
+        profileInput.put("supportScore", supportScore);
+        profileInput.put(
+                "recentFollowUpFeedback",
+                analyses.stream().limit(3).map(AiFollowUpAnalysis::getFeedback).toList()
+        );
+        AiFeatureService.AiLearnerProfileAssessment aiProfile =
+                aiFeatureService.assessLearnerProfile(profileInput, fallbackStyle);
+        TeamLearningStyle learningStyle = aiProfile != null ? aiProfile.learningStyle() : fallbackStyle;
+        String profileSummary = aiProfile != null
+                ? aiProfile.profileSummary()
+                : buildProfileSummary(learningStyle, reliabilityScore, initiativeScore, supportScore, understandingScore);
 
         return new LearnerProfile(
                 student,
@@ -448,7 +473,7 @@ public class TeamService {
                 initiativeScore,
                 supportScore,
                 understandingScore,
-                profileSummary
+                truncate(profileSummary, PROFILE_SUMMARY_MAX_LENGTH)
         );
     }
 
@@ -539,8 +564,36 @@ public class TeamService {
         }
         int diversityScore = calculateProfileDiversityScore(profiles);
         int scoreBalance = calculateScoreBalance(profiles);
-        int teamBuildingScore = clamp((diversityScore * 45 + scoreBalance * 55) / 100);
-        return new TeamMatching(teamBuildingScore, diversityScore, buildMatchingSummary(profiles, diversityScore, scoreBalance));
+        int fallbackTeamBuildingScore = clamp((diversityScore * 45 + scoreBalance * 55) / 100);
+        String fallbackSummary = buildMatchingSummary(profiles, diversityScore, scoreBalance);
+        AiFeatureService.AiTeamMatchingAssessment aiMatching = aiFeatureService.assessTeamMatching(
+                profiles.stream()
+                        .map(profile -> Map.<String, Object>of(
+                                "studentName", profile.user().getName(),
+                                "learningStyle", profile.learningStyle().name(),
+                                "reliabilityScore", profile.reliabilityScore(),
+                                "initiativeScore", profile.initiativeScore(),
+                                "supportScore", profile.supportScore(),
+                                "understandingScore", profile.understandingScore(),
+                                "profileSummary", profile.profileSummary()
+                        ))
+                        .toList(),
+                fallbackTeamBuildingScore,
+                diversityScore,
+                fallbackSummary
+        );
+        if (aiMatching != null) {
+            return new TeamMatching(
+                    aiMatching.teamBuildingScore(),
+                    aiMatching.profileDiversityScore(),
+                    truncate(aiMatching.matchingSummary(), MATCHING_SUMMARY_MAX_LENGTH)
+            );
+        }
+        return new TeamMatching(
+                fallbackTeamBuildingScore,
+                diversityScore,
+                truncate(fallbackSummary, MATCHING_SUMMARY_MAX_LENGTH)
+        );
     }
 
     private int calculateProfileDiversityScore(List<LearnerProfile> profiles) {
@@ -709,6 +762,13 @@ public class TeamService {
         courseEnrollmentRepository.findByCourseIdAndStudentId(courseId, userId)
                 .filter(enrollment -> enrollment.getStatus() == EnrollmentStatus.ENROLLED)
                 .orElseThrow(() -> new BusinessException(ErrorCode.COURSE_ACCESS_DENIED, "수강 중인 학생만 팀에 배정할 수 있습니다."));
+    }
+
+    private String truncate(String value, int maxLength) {
+        if (value == null || value.length() <= maxLength) {
+            return value;
+        }
+        return value.substring(0, maxLength).trim();
     }
 
     private void ensureStudentTeamMember(Long teamId, User user) {
