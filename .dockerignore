@@ -12,3 +12,4 @@ perf
 *.log
 *.env
 .env.production
+frontend-web
