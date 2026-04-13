@@ -25,9 +25,6 @@ import com.vibe2guys.backend.user.domain.UserStatus;
 import com.vibe2guys.backend.user.repository.UserRepository;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.AuthenticationException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -43,7 +40,6 @@ public class AuthService {
     private final UserRepository userRepository;
     private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
-    private final AuthenticationManager authenticationManager;
     private final JwtTokenProvider jwtTokenProvider;
     private final CustomUserDetailsService customUserDetailsService;
     private final JwtProperties jwtProperties;
@@ -79,11 +75,12 @@ public class AuthService {
         if (blockedUntil != null) {
             throw buildRateLimitedException(blockedUntil);
         }
-        try {
-            authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(normalizedEmail, request.password())
-            );
-        } catch (AuthenticationException ex) {
+        User user = userRepository.findByEmail(normalizedEmail)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_CREDENTIALS, "이메일 또는 비밀번호가 올바르지 않습니다."));
+        if (!user.isActive()) {
+            throw new BusinessException(ErrorCode.USER_INACTIVE, "비활성 사용자입니다.");
+        }
+        if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             OffsetDateTime newBlockedUntil = loginThrottleService.recordFailure(normalizedEmail, clientIp);
             if (newBlockedUntil != null && newBlockedUntil.isAfter(OffsetDateTime.now())) {
                 throw buildRateLimitedException(newBlockedUntil);
@@ -96,7 +93,7 @@ public class AuthService {
         String accessToken = jwtTokenProvider.createAccessToken(principal);
         String refreshTokenValue = jwtTokenProvider.createRefreshToken(principal);
         String refreshTokenHash = refreshTokenHasher.hash(refreshTokenValue);
-        User user = userRepository.findById(principal.getId())
+        user = userRepository.findById(principal.getId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.USER_NOT_FOUND, "사용자를 찾을 수 없습니다."));
 
         refreshTokenRepository.save(RefreshToken.builder()
